@@ -24,7 +24,7 @@
         (if (or (not message)
                 (= from shutdown))
           (tools/debug-msg (str (conduit/identifier conduit)
-                                "conduit socket-loop shutting down"))
+                                " conduit socket-loop shutting down"))
           (do (try
                 (dispatch message provided)
                 (catch

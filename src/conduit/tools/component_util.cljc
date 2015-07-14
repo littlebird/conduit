@@ -1,22 +1,33 @@
 (ns conduit.tools.component-util)
 
+(def side #?(:clj "server" :cljs "client"))
+
+(def stop-words {:present "stopping"
+                 :past "stopped"})
+
+(def start-words {:present "starting"
+                  :past "started"})
+
 (defn idempotent
-  [{:keys [owner name cnd verb component]} thunk]
+  [{:keys [owner name cnd verbs component]} thunk]
   (if cnd
-    (do (println owner
-                 #?(:clj "server" :cljs "client")
-                 (str verb "ing") (str name "."))
-        (thunk))
+    (let [_ (println owner
+                     side
+                     (:present verbs)
+                     (str name "."))
+          result (thunk)]
+      result)
     (do
       (println owner
-               #?(:clj "server" :cljs "client")
-               "not" (str verb "ing")
-               (str name ",") "already" (str verb "ed."))
+               side
+               "not" (:present verbs)
+               (str name ",")
+               "already" (:past verbs))
       component)))
 
 (defn start
   [component k owner f]
-  (idempotent {:verb "start"
+  (idempotent {:verbs start-words
                :owner owner
                :name (name k)
                :component component
@@ -25,7 +36,7 @@
 
 (defn stop
   [component k owner f]
-  (idempotent {:verb "stop"
+  (idempotent {:verbs stop-words
                :owner owner
                :name (name k)
                :component component
