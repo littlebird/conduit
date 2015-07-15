@@ -5,4 +5,4 @@
   (verbose? [this])
   (receiver [this])
   (parse [this message])
-  (unhandled [this message]))
+  (unhandled [this message provided]))

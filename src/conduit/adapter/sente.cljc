@@ -29,5 +29,5 @@
          :cljs
          (assoc result
                 :uid (:uid message)))))
-  (unhandled [this message]
-    (unhandled message)))
+  (unhandled [this message provided]
+    (unhandled message provided)))
