@@ -31,3 +31,9 @@
                 :uid (:uid message)))))
   (unhandled [this message provided]
     (unhandled message provided)))
+
+(defn new-sente-conduit
+  [impl verbose unhandled]
+  (map->SenteConduit {:impl impl
+                      :verbose verbose
+                      :unhandled unhandled}))
