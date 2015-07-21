@@ -1,11 +1,16 @@
 (ns conduit.adapter.kafka
-  (:require [conduit.protocol :as conduit]
+  (:require [clj-kafka.zk :as zk]
+            [conduit.protocol :as conduit]
             [conduit.tools :as tools]
             [cognitect.transit :as transit]
             [clj-kafka.producer :as produce]
             [clj-kafka.consumer.zk :as zk-consume]
-            [clojure.core.async :as >])
-  (:import (java.util UUID
+            [clojure.core.async :as >]
+            [noisesmith.component :as component]
+            [conduit.tools.component-util :as util])
+  (:import org.slf4j.LoggerFactory
+           (ch.qos.logback.classic Logger Level)
+           (java.util UUID
                       Date)
            (java.io ByteArrayInputStream
                     ByteArrayOutputStream)))
@@ -20,6 +25,69 @@
 ;; bin/kafka-topics.sh --list --zookeeper localhost:2181
 (defn list-topics
   [])
+
+(defn stfu-up
+  []
+  (.setLevel (LoggerFactory/getLogger Logger/ROOT_LOGGER_NAME)
+             Level/WARN))
+
+
+(defrecord KafkaPeer [encoders decoders socket-router group-prefix owner]
+  component/Lifecycle
+  (start [component]
+    (util/start
+     component
+     :kafka-peer
+     owner
+     (fn []
+       (stfu-up)
+       (let [config (-> component :config :config :kafka)
+             config (merge
+                     {:zk-host "127.0.0.1"
+                      :zk-port 2181
+                      :kafka-port 9092}
+                     config)
+             producer (produce/producer
+                       {"metadata.broker.list" (str (:zk-host config) \:
+                                                    (:kafka-port config))
+                        "serializer.class" "kafka.serializer.DefaultEncoder"
+                        "partitioner.class" "kafka.producer.DefaultPartitioner"})
+             id (UUID/randomUUID)
+             zk-consumer (zk-consume/consumer
+                          {"zookeeper.connect" (str (:zk-host config) \:
+                                                    (:zk-port config))
+                           "group.id" (str group-prefix id)
+                           "auto.offset.reset" "largest"
+                           "auto.commit.interval.ms" "200"
+                           "auto.commit.enable" "true"})
+             brokers #(zk/brokers
+                       {"zookeeper.connect"
+                        (str (:zk-host config) \: (:zk-port config))})]
+         (assoc component
+                :id id
+                :socket-router socket-router
+                :encoders encoders
+                :decoders decoders
+                :brokers brokers
+                :producer producer
+                :zk-consumer zk-consumer)))))
+  (stop [component]
+    (util/stop
+     component
+     :kafka-peer
+     owner
+     (fn []
+       (dissoc component
+               :encoders
+               :decoders
+               :producer
+               :zk-consumer
+               :brokers)))))
+
+(defn new-kafka-peer
+  [{:keys [owner encoders decoders socket-router group-prefix] :as config}]
+  (println "CREATING KAFKA PEER" owner group-prefix)
+  (map->KafkaPeer config))
 
 (defrecord KafkaConduit [transmitter receiver
                          verbose unhandled
