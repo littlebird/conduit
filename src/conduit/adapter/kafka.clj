@@ -3,7 +3,7 @@
             [conduit.tools :as tools]
             [cognitect.transit :as transit]
             [clj-kafka.producer :as produce]
-            [clj-kafka.consumer.simple :as consume]
+            [clj-kafka.consumer.zk :as zk-consume]
             [clojure.core.async :as >])
   (:import (java.util UUID
                       Date)
@@ -22,7 +22,8 @@
   [])
 
 (defrecord KafkaConduit [transmitter receiver
-                         verbose unhandled]
+                         verbose unhandled
+                         id]
   conduit/Conduit
   (identifier [this]
     "kafka conduit channel")
@@ -38,43 +39,61 @@
   (unhandled [this message provided]
     (unhandled message)))
 
+(defn decoder
+  [decoders]
+  (fn [msg]
+    (let [bytes-in (ByteArrayInputStream. msg)
+          reader (transit/reader bytes-in :json decoders)
+          [to routing sender message :as inflated] (transit/read reader)]
+      [routing (assoc (if (map? message)
+                        message
+                        {:data message})
+                      :sender sender
+                      :raw inflated
+                      :msg msg
+                      :to to)])))
+
+(defn make-zk-receiver
+  [{:keys [my-id consumer topic decoders]}]
+  (let [decode (decoder decoders)
+        stream (zk-consume/create-message-stream consumer topic)
+        it (.iterator stream)
+        result (>/chan)]
+    (>/go-loop [msg (.message (.next it))]
+      (let [payload (decode msg)
+            to (:to (second payload))]
+        (when (or (not to)
+                  (= to my-id))
+          (>/>! result payload))
+        (recur (.message (.next it)))))
+    result))
+
+(defn make-transmitter
+  [my-id producer topic encoders]
+  (fn [to route message]
+    ;; easy optimization -- pooling or other re-use of encoders
+    (let [data [to route my-id message]
+          baos (ByteArrayOutputStream. 512)
+          writer (transit/writer baos :json encoders)
+          _ (transit/write writer data)
+          packed (produce/message topic (.toByteArray baos))]
+      (produce/send-message producer packed))))
+
 (defn new-kafka-conduit
-  [{:keys [{:keys [producer consumer brokers encoders decoders] :as impl}
-           group
-           topic
-           verbose
-           unhandled
-           id]}]
+  [{{:keys [id producer zk-consumer brokers encoders decoders] :as impl} :impl
+    group :group
+    topic :topic
+    verbose :verbose
+    unhandled :unhandled}]
   (let [my-id (or id (UUID/randomUUID))
-        from (consume/latest-topic-offset consumer topic 0)
-        transmitter
-        (fn [route message]
-          ;; easy optimization -- pooling or other re-use of encoders
-          (let [data [route my-id message]
-                baos (ByteArrayOutputStream. 512)
-                writer (transit/writer baos :json encoders)
-                _ (transit/write writer data)
-                packed (produce/message baos)]
-            (produce/send-message producer topic packed)))
-        receiver (let [results (>/chan)]
-                   (>/go-loop [in nil
-                               since (.getTime (Date.))
-                               timeout 100]
-                     (doseq [msg in]
-                       (let [bytes-in (ByteArrayInputStream. (:value msg))
-                             reader (transit/reader bytes-in decoders)
-                             [to routing message] (transit/read reader)]
-                         (when (= (or to my-id)
-                                  my-id)
-                           (>/>! results [routing (assoc message :raw msg)]))))
-                     (>/timeout timeout)
-                     (recur (consume/messages consumer group
-                                              topic 0 from 1000)
-                            (if (not-empty in) (.getTime (Date.)) since)
-                            ;; TODO: fine tune
-                            timeout))
-                   results)]
+        transmitter (make-transmitter my-id producer topic encoders)
+        zk-receiver (make-zk-receiver {:my-id my-id
+                                       :consumer zk-consumer
+                                       :group group
+                                       :topic topic
+                                       :decoders decoders})]
     (map->KafkaConduit {:transmitter transmitter
-                        :receiver receiver
+                        :receiver zk-receiver
                         :verbose verbose
-                        :unhandled unhandled})))
+                        :unhandled unhandled
+                        :id my-id})))

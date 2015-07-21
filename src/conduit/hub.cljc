@@ -9,7 +9,7 @@
                :cljs
                [cljs.core.async :as >])))
 
-(defrecord Conduit [owner constructor]
+(defrecord Conduit [owner constructor routes-lookup]
   component/Lifecycle
   (start [component]
     (component-tools/start
@@ -25,12 +25,15 @@
                                  (>/go
                                    (>/<! signal)
                                    (f))))
-             provided (-> component :provided :provided)]
+             provided (-> component :provided :provided)
+             impl (constructor component)]
          (router/run-router (assoc provided
-                                   :impl (constructor component)
+                                   :routes (get-in component routes-lookup)
+                                   :impl impl
                                    :handshake invoke-handshake)
                              (>/mult shutdown))
          (assoc component
+                :impl impl
                 :conduit :running
                 :shutdown shutdown
                 :after-handshake after-handshake)))))
