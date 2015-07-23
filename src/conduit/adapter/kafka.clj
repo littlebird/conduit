@@ -86,7 +86,6 @@
 
 (defn new-kafka-peer
   [{:keys [owner encoders decoders socket-router group-prefix] :as config}]
-  (println "CREATING KAFKA PEER" owner group-prefix)
   (map->KafkaPeer config))
 
 (defrecord KafkaConduit [transmitter receiver
