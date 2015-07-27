@@ -33,7 +33,8 @@
 
 (defn make-transmitter
   [my-id producer topic encoders]
-  (fn [to route message]
+  (fn kafka-transmitter
+    [to route message]
     ;; easy optimization -- pooling or other re-use of encoders
     (let [data [to route my-id message]
           baos (ByteArrayOutputStream. 512)
@@ -70,7 +71,8 @@
                            "auto.offset.reset" "largest"
                            "auto.commit.interval.ms" "200"
                            "auto.commit.enable" "true"})
-             topic-transmitter (fn [topic]
+             topic-transmitter (fn topic-transmitter
+                                 [topic]
                                  (make-transmitter id producer topic encoders))
              brokers #(zk/brokers
                        {"zookeeper.connect"
