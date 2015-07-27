@@ -149,11 +149,10 @@
     result))
 
 (defn new-kafka-conduit
-  [{{:keys [id producer zk-consumer brokers encoders decoders] :as impl} :impl
+  [{{:keys [id topic-transmitter producer zk-consumer brokers encoders decoders] :as impl} :impl
     group :group
     topic :topic
     verbose :verbose
-    topic-transmitter :topic-transmitter
     unhandled :unhandled}]
   (let [my-id (or id (UUID/randomUUID))
         zk-receiver (make-zk-receiver {:my-id my-id
