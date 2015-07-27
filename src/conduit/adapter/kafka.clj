@@ -31,6 +31,16 @@
   (.setLevel (LoggerFactory/getLogger Logger/ROOT_LOGGER_NAME)
              Level/WARN))
 
+(defn make-transmitter
+  [my-id producer topic encoders]
+  (fn [to route message]
+    ;; easy optimization -- pooling or other re-use of encoders
+    (let [data [to route my-id message]
+          baos (ByteArrayOutputStream. 512)
+          writer (transit/writer baos :json encoders)
+          _ (transit/write writer data)
+          packed (produce/message topic (.toByteArray baos))]
+      (produce/send-message producer packed))))
 
 (defrecord KafkaPeer [encoders decoders socket-router group-prefix owner]
   component/Lifecycle
@@ -60,10 +70,13 @@
                            "auto.offset.reset" "largest"
                            "auto.commit.interval.ms" "200"
                            "auto.commit.enable" "true"})
+             topic-transmitter (fn [topic]
+                                 (make-transmitter id producer topic encoders))
              brokers #(zk/brokers
                        {"zookeeper.connect"
                         (str (:zk-host config) \: (:zk-port config))})]
          (assoc component
+                :topic-transmitter topic-transmitter
                 :id id
                 :socket-router socket-router
                 :encoders encoders
@@ -135,31 +148,20 @@
         (recur (.message (.next it)))))
     result))
 
-(defn make-transmitter
-  [my-id producer topic encoders]
-  (fn [to route message]
-    ;; easy optimization -- pooling or other re-use of encoders
-    (let [data [to route my-id message]
-          baos (ByteArrayOutputStream. 512)
-          writer (transit/writer baos :json encoders)
-          _ (transit/write writer data)
-          packed (produce/message topic (.toByteArray baos))]
-      (produce/send-message producer packed))))
-
 (defn new-kafka-conduit
   [{{:keys [id producer zk-consumer brokers encoders decoders] :as impl} :impl
     group :group
     topic :topic
     verbose :verbose
+    topic-transmitter :topic-transmitter
     unhandled :unhandled}]
   (let [my-id (or id (UUID/randomUUID))
-        transmitter (make-transmitter my-id producer topic encoders)
         zk-receiver (make-zk-receiver {:my-id my-id
                                        :consumer zk-consumer
                                        :group group
                                        :topic topic
                                        :decoders decoders})]
-    (map->KafkaConduit {:transmitter transmitter
+    (map->KafkaConduit {:transmitter (topic-transmitter topic)
                         :receiver zk-receiver
                         :verbose verbose
                         :unhandled unhandled
