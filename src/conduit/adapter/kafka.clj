@@ -127,13 +127,10 @@
     (let [bytes-in (ByteArrayInputStream. msg)
           reader (transit/reader bytes-in :json decoders)
           [to routing sender message :as inflated] (transit/read reader)]
-      [routing (assoc (if (map? message)
-                        message
-                        {:data message})
-                      :sender sender
-                      :raw inflated
-                      :msg msg
-                      :to to)])))
+      [routing {:data message
+                :sender sender
+                :raw inflated
+                :to to}])))
 
 (defn make-zk-receiver
   [{:keys [my-id consumer topic decoders]}]
