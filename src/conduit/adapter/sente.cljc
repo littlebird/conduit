@@ -23,12 +23,9 @@
                       (:send-fn impl))
           result {:routing routing
                   :contents contents
-                  :transmit transmit}]
-      #?(:clj
-         result
-         :cljs
-         (assoc result
-                :uid (:uid message)))))
+                  :transmit transmit
+                  :uid (:uid message)}]
+      result))
   (unhandled [this message provided]
     (unhandled message provided)))
 
