@@ -33,7 +33,8 @@
                   e
                   (tools/error-msg (str (conduit/identifier conduit)
                                         " socket-loop uncaught exception"
-                                        (pr-str e)))))
+                                        (pr-str {:error e
+                                                 :message message})))))
               (recur)))))))
 
 (defonce debug (atom []))
@@ -47,7 +48,7 @@
           unhandled (partial conduit/unhandled conduit)
           handler (get routes routing unhandled)
           provided (assoc provided :transmit transmit :routing routing)]
-      (swap! debug conj [(class conduit) message])
+      (swap! debug conj [(type conduit) message])
       (when (conduit/verbose? conduit)
         (tools/debug-msg (str (conduit/identifier conduit)
                               " routing from " routing " with handler " handler
