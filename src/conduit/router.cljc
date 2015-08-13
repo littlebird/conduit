@@ -37,18 +37,14 @@
                                                  :message message})))))
               (recur)))))))
 
-(defonce debug (atom []))
-
 (defn dispatcher
   [conduit routes]
   (fn
     [msg provided]
     (let [{:keys [routing contents transmit] :as message} (conduit/parse conduit msg)
-          message (assoc message :raw msg)
           unhandled (partial conduit/unhandled conduit)
           handler (get routes routing unhandled)
           provided (assoc provided :transmit transmit :routing routing)]
-      (swap! debug conj [(type conduit) message])
       (when (conduit/verbose? conduit)
         (tools/debug-msg (str (conduit/identifier conduit)
                               " routing from " routing " with handler " handler

@@ -129,7 +129,7 @@
           [to routing sender message :as inflated] (transit/read reader)]
       [routing {:data message
                 :sender sender
-                :raw inflated
+                :routing routing
                 :to to}])))
 
 (defn make-zk-receiver
