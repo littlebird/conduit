@@ -151,6 +151,7 @@
   [{{:keys [id topic-transmitter producer zk-consumer brokers encoders decoders] :as impl} :impl
     group :group
     topic :topic
+    send-topic :send-topic
     verbose :verbose
     unhandled :unhandled}]
   (let [my-id (or id (UUID/randomUUID))
@@ -158,8 +159,9 @@
                                        :consumer zk-consumer
                                        :group group
                                        :topic topic
-                                       :decoders decoders})]
-    (map->KafkaConduit {:transmitter (topic-transmitter topic)
+                                       :decoders decoders})
+        send-topic (or send-topic topic)]
+    (map->KafkaConduit {:transmitter (topic-transmitter send-topic)
                         :receiver zk-receiver
                         :verbose verbose
                         :unhandled unhandled
