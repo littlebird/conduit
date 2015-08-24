@@ -52,10 +52,10 @@
      owner
      (fn []
        (stfu-up)
+       (assert (-> component :config :config :kafka :zk-host) "must specify host")
        (let [config (-> component :config :config :kafka)
              config (merge
-                     {:zk-host "127.0.0.1"
-                      :zk-port 2181
+                     {:zk-port 2181
                       :kafka-port 9092}
                      config)
              producer (produce/producer
@@ -100,7 +100,7 @@
                :brokers)))))
 
 (defn new-kafka-peer
-  [{:keys [owner encoders decoders socket-router group-prefix] :as config}]
+  [{:keys [owner encoders decoders socket-router group-prefix zk-host] :as config}]
   (map->KafkaPeer config))
 
 (defrecord KafkaConduit [transmitter receiver
