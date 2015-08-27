@@ -63,7 +63,7 @@
                                                     (:kafka-port config))
                         "serializer.class" "kafka.serializer.DefaultEncoder"
                         "partitioner.class" "kafka.producer.DefaultPartitioner"})
-             id (UUID/randomUUID)
+             id (:id config (UUID/randomUUID))
              zk-consumer (zk-consume/consumer
                           {"zookeeper.connect" (str (:zk-host config) \:
                                                     (:zk-port config))
