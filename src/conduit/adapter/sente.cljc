@@ -23,7 +23,9 @@
                       (:send-fn impl))
           result {:routing routing
                   :contents contents
-                  :transmit transmit
+                  :transmit (fn [& args]
+                              (println "sente transmitting" (pr-str args))
+                              (apply transmit args))
                   :uid (:uid message)}]
       result))
   (unhandled [this message provided]
