@@ -78,7 +78,7 @@
                        {"zookeeper.connect"
                         (str (:zk-host config) \: (:zk-port config))})]
          (assoc component
-                :kafka-peer started
+                :kafka-peer :started
                 :topic-transmitter topic-transmitter
                 :id id
                 :socket-router socket-router
