@@ -59,18 +59,22 @@
                       :kafka-port 9092}
                      config)
              producer (produce/producer
-                       {"metadata.broker.list" (str (:zk-host config) \:
-                                                    (:kafka-port config))
-                        "serializer.class" "kafka.serializer.DefaultEncoder"
-                        "partitioner.class" "kafka.producer.DefaultPartitioner"})
+                       (merge
+                        {"metadata.broker.list" (str (:zk-host config) \:
+                                                     (:kafka-port config))
+                         "serializer.class" "kafka.serializer.DefaultEncoder"
+                         "partitioner.class" "kafka.producer.DefaultPartitioner"}
+                        (:producer-opts config)))
              id (:id config (UUID/randomUUID))
              zk-consumer (zk-consume/consumer
-                          {"zookeeper.connect" (str (:zk-host config) \:
-                                                    (:zk-port config))
-                           "group.id" (str group-prefix id)
-                           "auto.offset.reset" "largest"
-                           "auto.commit.interval.ms" "200"
-                           "auto.commit.enable" "true"})
+                          (merge
+                           {"zookeeper.connect" (str (:zk-host config) \:
+                                                     (:zk-port config))
+                            "group.id" (str group-prefix id)
+                            "auto.offset.reset" "largest"
+                            "auto.commit.interval.ms" "200"
+                            "auto.commit.enable" "true"}
+                           (:consumer-opts config)))
              topic-transmitter (fn topic-transmitter
                                  [topic]
                                  (make-transmitter id producer topic encoders))
