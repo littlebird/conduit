@@ -113,3 +113,10 @@
 (defn href
   [fragment]
   (str "/" (construct fragment)))
+
+(defn url-fragment
+  [url-string]
+  (->> url-string
+       (re-matches #"[^#]+(#/.*)")
+       peek
+       parse))
