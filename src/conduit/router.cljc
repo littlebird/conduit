@@ -11,6 +11,13 @@
                  [conduit.tools.async :as socket-async]
                  [clojure.core.async :as >])]))
 
+(defn is-partial?
+  [message]
+  false)
+
+(defn handle-partial
+  [message]
+  false)
 
 (defn socket-loop
   [conduit provided shutdown dispatch]
@@ -21,11 +28,14 @@
             _ (assert socket)
             [message from] (>/alts! [shutdown
                                      (conduit/receiver conduit)])]
-        (if (or (not message)
+        (cond (or (not message)
                 (= from shutdown))
-          (tools/debug-msg (str (conduit/identifier conduit)
-                                " conduit socket-loop shutting down"))
-          (do (try
+              (tools/debug-msg (str (conduit/identifier conduit)
+                                    " conduit socket-loop shutting down"))
+              (is-partial? message)
+              (handle-partial message)
+              :default
+              (do (try
                 (dispatch message provided)
                 (catch
                     #?(:clj Exception
@@ -35,7 +45,7 @@
                                         " socket-loop uncaught exception"
                                         (pr-str {:error e
                                                  :message message})))))
-              (recur)))))))
+                  (recur)))))))
 
 (defn dispatcher
   [conduit routes]
