@@ -7,4 +7,6 @@
                  [noisesmith/component "0.2.5"]
                  [prismatic/schema "0.4.3"]
                  [clj-kafka "0.3.1"]
+                 [org.clojure/data.codec "0.1.0"]
+                 [com.taoensso/sente "1.4.1"]
                  [com.cognitect/transit-clj "0.8.275"]])

@@ -9,7 +9,8 @@
                :cljs
                [cljs.core.async :as >])))
 
-(defrecord Conduit [owner constructor routes-lookup]
+(defrecord Conduit [owner constructor routes-lookup parallelism
+                    message-size-limit]
   component/Lifecycle
   (start [component]
     (component-tools/start
@@ -27,11 +28,15 @@
                                    (f))))
              provided (-> component :provided :provided)
              impl (constructor component)]
+         (println "conduit starting up router for" owner)
          (router/run-router (assoc provided
                                    :routes (get-in component routes-lookup)
                                    :impl impl
                                    :handshake invoke-handshake)
-                             (>/mult shutdown))
+                             (>/mult shutdown)
+                             (or message-size-limit 32768)
+                             (or parallelism 1))
+         (println "conduit router for" owner "started")
          (assoc component
                 :impl impl
                 :conduit :running

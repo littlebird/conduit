@@ -2,18 +2,15 @@
   (:require [clj-kafka.zk :as zk]
             [conduit.protocol :as conduit]
             [conduit.tools :as tools]
-            [cognitect.transit :as transit]
             [clj-kafka.producer :as produce]
             [clj-kafka.consumer.zk :as zk-consume]
             [clojure.core.async :as >]
             [noisesmith.component :as component]
             [conduit.tools.component-util :as util])
-  (:import org.slf4j.LoggerFactory
-           (ch.qos.logback.classic Logger Level)
+  (:import ;; org.slf4j.LoggerFactory
+           ;; (ch.qos.logback.classic Logger Level)
            (java.util UUID
-                      Date)
-           (java.io ByteArrayInputStream
-                    ByteArrayOutputStream)))
+                      Date)))
 
 
 ;;; CREATE TOPIC
@@ -28,6 +25,7 @@
 
 (defn stfu-up
   []
+  #_
   (.setLevel (LoggerFactory/getLogger Logger/ROOT_LOGGER_NAME)
              Level/WARN))
 
@@ -37,9 +35,7 @@
     [to route message]
     ;; easy optimization -- pooling or other re-use of encoders
     (let [data [to route my-id message]
-          baos (ByteArrayOutputStream. 512)
-          writer (transit/writer baos :json encoders)
-          _ (transit/write writer data)
+          baos (tools/transit-pack data)
           packed (produce/message topic (.toByteArray baos))]
       (produce/send-message producer packed))))
 
@@ -130,9 +126,8 @@
 (defn decoder
   [decoders]
   (fn [msg]
-    (let [bytes-in (ByteArrayInputStream. msg)
-          reader (transit/reader bytes-in :json decoders)
-          [to routing sender message :as inflated] (transit/read reader)]
+    (let [[to routing sender message :as inflated]
+          (tools/transit-unpack msg decoders)]
       [routing {:data message
                 :sender sender
                 :routing routing
