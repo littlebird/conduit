@@ -30,13 +30,14 @@
   [arg-parse transmit-function limit encoders]
   (fn [& args]
     (let [[routing message] (arg-parse args)]
+      (if (nil? message)
+        (println "nil message in wrap transmit"))
       (if (small-enough? limit message)
         (transmit-function routing message)
-        (let [message-id (#?(:clj format :clj gstring/format)
-                            "%12d" (rand-int #?(:clj
-                                                Integer/MAX_VALUE
-                                                :cljs
-                                                2147483647)))
+        (let [message-id (rand-int #?(:clj
+                                      Integer/MAX_VALUE
+                                      :cljs
+                                      2147483647))
               packed (str (tools/transit-pack message encoders))
               n-parts (int (Math/ceil (/ (count packed) (double limit))))]
           (dotimes [i n-parts]
@@ -89,28 +90,24 @@
   (let [{{:keys [message-id part n-parts fragment] :as message}
          :conduit/partial-message} partial-message
         constructed (placeholder)]
-    (#?(:clj send :cljs swap!)
+    (swap!
        partial-messages
        (fn [partials]
          (let [new-state (assoc-in partials [message-id part] message)]
-           (println "n-parts" n-parts "new-state" (keys partials) (keys (get partials message-id)))
            (if-not (= n-parts (count (get new-state message-id)))
              new-state
-             (let [data (-> new-state
-                            (get message-id)
-                            (sort)
-                            (->>
-                             (map (comp :fragment val))
-                             (apply str))
-                            (tools/transit-unpack decoders))]
-               (println "delivered data:" (pr-str data))
-               (fill-place constructed data)
+             (let [message-parts (get new-state message-id)
+                   sorted (sort message-parts)
+                   fragments (map (comp :fragment val) sorted)
+                   data (apply str fragments)
+                   parsed (tools/transit-unpack data decoders)]
+               (fill-place constructed parsed)
                (dissoc new-state message-id))))))
     (when-offered constructed :partial/consumed)))
 
 (defn wrap-parser-result
   [decoders]
-  (let [partial-messages (#?(:clj agent :cljs atom) {})]
+  (let [partial-messages (atom {})]
     (fn [message]
       (when message
         (if-not (and (map? message)

@@ -26,7 +26,7 @@
                          encoders)
                         #(tools/error-msg "tried to send" %& "with no UID"))
                       :cljs
-                      (partial/wrap-transmit-separate
+                      (partial/wrap-transmit-bundled
                        (:send-fn impl)
                        message-split-threshold
                        encoders))

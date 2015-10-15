@@ -43,7 +43,7 @@
 (defn transit-unpack
   [msg decoders]
   #?(:clj
-     (let [bytes-in (ByteArrayInputStream. msg)
+     (let [bytes-in (ByteArrayInputStream. (.getBytes msg))
            reader (transit/reader bytes-in :json decoders)]
        (transit/read reader))
      :cljs
