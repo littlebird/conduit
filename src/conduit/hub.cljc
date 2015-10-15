@@ -34,7 +34,6 @@
                                    :impl impl
                                    :handshake invoke-handshake)
                              (>/mult shutdown)
-                             (or message-size-limit 32768)
                              (or parallelism 1))
          (println "conduit router for" owner "started")
          (assoc component

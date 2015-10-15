@@ -7,9 +7,7 @@
             [clojure.core.async :as >]
             [noisesmith.component :as component]
             [conduit.tools.component-util :as util])
-  (:import ;; org.slf4j.LoggerFactory
-           ;; (ch.qos.logback.classic Logger Level)
-           (java.util UUID
+  (:import (java.util UUID
                       Date)))
 
 
@@ -23,19 +21,13 @@
 (defn list-topics
   [])
 
-(defn stfu-up
-  []
-  #_
-  (.setLevel (LoggerFactory/getLogger Logger/ROOT_LOGGER_NAME)
-             Level/WARN))
-
 (defn make-transmitter
   [my-id producer topic encoders]
   (fn kafka-transmitter
     [to route message]
     ;; easy optimization -- pooling or other re-use of encoders
     (let [data [to route my-id message]
-          baos (tools/transit-pack data)
+          baos (tools/transit-pack data encoders)
           packed (produce/message topic (.toByteArray baos))]
       (produce/send-message producer packed))))
 
@@ -47,25 +39,22 @@
      :kafka-peer
      owner
      (fn []
-       (stfu-up)
-       (assert (-> component :config :config :kafka :zk-host) "must specify host")
-       (let [config (-> component :config :config :kafka)
+       (assert (get-in component [:config :config :kafka :zk-host]) "must specify host")
+       (let [config (get-in component [:config :config :kafka])
              config (merge
                      {:zk-port 2181
                       :kafka-port 9092}
                      config)
              producer (produce/producer
                        (merge
-                        {"metadata.broker.list" (str (:zk-host config) \:
-                                                     (:kafka-port config))
+                        {"metadata.broker.list" (str (:zk-host config) \: (:kafka-port config))
                          "serializer.class" "kafka.serializer.DefaultEncoder"
                          "partitioner.class" "kafka.producer.DefaultPartitioner"}
                         (:producer-opts config)))
              id (:id config (UUID/randomUUID))
              zk-consumer (zk-consume/consumer
                           (merge
-                           {"zookeeper.connect" (str (:zk-host config) \:
-                                                     (:zk-port config))
+                           {"zookeeper.connect" (str (:zk-host config) \: (:zk-port config))
                             "group.id" (str group-prefix id)
                             "auto.offset.reset" "largest"
                             "auto.commit.interval.ms" "200"
@@ -74,9 +63,8 @@
              topic-transmitter (fn topic-transmitter
                                  [topic]
                                  (make-transmitter id producer topic encoders))
-             brokers #(zk/brokers
-                       {"zookeeper.connect"
-                        (str (:zk-host config) \: (:zk-port config))})]
+             brokers #(zk/brokers {"zookeeper.connect"
+                                   (str (:zk-host config) \: (:zk-port config))})]
          (assoc component
                 :kafka-peer :started
                 :topic-transmitter topic-transmitter

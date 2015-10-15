@@ -1,8 +1,11 @@
 (ns conduit.adapter.sente
   (:require [conduit.protocol :as conduit]
+            [conduit.partial-messages :as partial]
             [conduit.tools :as tools]))
 
-(defrecord SenteConduit [impl verbose unhandled]
+(defrecord SenteConduit [impl split-transmitter bundled-transmitter partial-parse
+                         verbose unhandled message-split-threshold encoders
+                         parse-callback]
   conduit/Conduit
   (identifier [this]
     "sente conduit channel")
@@ -17,20 +20,32 @@
                                [routing contents])
           transmit #?(:clj
                       (if-let [uid (:uid contents)]
-                        (partial (:send-fn impl) uid)
+                        (partial/wrap-transmit-bundled
+                         (partial (:send-fn impl) uid)
+                         message-split-threshold
+                         encoders)
                         #(tools/error-msg "tried to send" %& "with no UID"))
                       :cljs
-                      (:send-fn impl))
-          result {:routing routing
-                  :contents contents
-                  :transmit transmit
-                  :uid (:uid message)}]
+                      (partial/wrap-transmit-separate
+                       (:send-fn impl)
+                       message-split-threshold
+                       encoders))
+          combined (partial-parse contents)
+          result (if (= combined :partial/consumed)
+                   :partial/consumed
+                   {:routing routing
+                    :contents combined
+                    :transmit transmit
+                    :uid (:uid message)})]
+      (when parse-callback
+        (parse-callback result))
       result))
   (unhandled [this message provided]
     (unhandled message provided)))
 
 (defn new-sente-conduit
-  [impl verbose unhandled]
-  (map->SenteConduit {:impl impl
-                      :verbose verbose
-                      :unhandled unhandled}))
+  [{:keys [impl verbose unhandled message-split-threshold encoders decoders
+           parse-callback] :as opts}]
+  (map->SenteConduit
+   (assoc opts
+          :partial-parse (partial/wrap-parser-result decoders))))
