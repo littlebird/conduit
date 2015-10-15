@@ -20,8 +20,9 @@
                                [routing contents])
           transmit #?(:clj
                       (if-let [uid (:uid contents)]
-                        (partial/wrap-transmit-bundled
-                         (partial (:send-fn impl) uid)
+                        (partial/wrap-transmit-to-target-bundled
+                         uid
+                         (:send-fn impl)
                          message-split-threshold
                          encoders)
                         #(tools/error-msg "tried to send" %& "with no UID"))

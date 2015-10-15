@@ -40,11 +40,16 @@
      :cljs
      (transit/write (transit/writer :json encoders) data)))
 
+(defn transit-unpack-bytes
+  [bytes decoders]
+  #?(:clj
+     (let [bytes-in (ByteArrayInputStream. bytes)
+           reader (transit/reader bytes-in :json decoders)]
+       (transit/read reader))))
+
 (defn transit-unpack
   [msg decoders]
   #?(:clj
-     (let [bytes-in (ByteArrayInputStream. (.getBytes msg))
-           reader (transit/reader bytes-in :json decoders)]
-       (transit/read reader))
+     (transit-unpack-bytes (.getBytes msg) decoders)
      :cljs
      (transit/read (transit/reader :json decoders) msg)))

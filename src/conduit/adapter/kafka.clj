@@ -6,6 +6,7 @@
             [clj-kafka.consumer.zk :as zk-consume]
             [clojure.core.async :as >]
             [noisesmith.component :as component]
+            [conduit.partial-messages :as partial]
             [conduit.tools.component-util :as util])
   (:import (java.util UUID
                       Date)))
@@ -22,16 +23,21 @@
   [])
 
 (defn make-transmitter
-  [my-id producer topic encoders]
-  (fn kafka-transmitter
-    [to route message]
-    ;; easy optimization -- pooling or other re-use of encoders
-    (let [data [to route my-id message]
-          baos (tools/transit-pack data encoders)
-          packed (produce/message topic (.toByteArray baos))]
-      (produce/send-message producer packed))))
+  [my-id producer topic encoders message-split-threshold]
+  (partial/wrap-transmit-separate
+   (fn kafka-transmitter
+     [to route message]
+     ;; easy optimization -- pooling or other re-use of baos
+     (let [message (when (map? message) (assoc message :conduit/provinence :conduit/kafka))
+           data [to route my-id message]
+           baos (tools/transit-pack data encoders)
+           packed (produce/message topic (.toByteArray baos))]
+       (produce/send-message producer packed)))
+   message-split-threshold
+   encoders))
 
-(defrecord KafkaPeer [encoders decoders socket-router group-prefix owner]
+(defrecord KafkaPeer [encoders decoders socket-router group-prefix owner
+                      message-split-threshold]
   component/Lifecycle
   (start [component]
     (util/start
@@ -62,7 +68,8 @@
                            (:consumer-opts config)))
              topic-transmitter (fn topic-transmitter
                                  [topic]
-                                 (make-transmitter id producer topic encoders))
+                                 (make-transmitter id producer topic encoders
+                                                   message-split-threshold))
              brokers #(zk/brokers {"zookeeper.connect"
                                    (str (:zk-host config) \: (:zk-port config))})]
          (assoc component
@@ -90,12 +97,13 @@
                :brokers)))))
 
 (defn new-kafka-peer
-  [{:keys [owner encoders decoders socket-router group-prefix zk-host] :as config}]
+  [{:keys [owner encoders decoders socket-router group-prefix zk-host
+           message-split-threshold] :as config}]
   (map->KafkaPeer config))
 
 (defrecord KafkaConduit [transmitter receiver
                          verbose unhandled
-                         id]
+                         id partial-parser]
   conduit/Conduit
   (identifier [this]
     "kafka conduit channel")
@@ -104,10 +112,12 @@
   (receiver [this]
     receiver)
   (parse [this [routing contents]]
-    ;; get the routing, contents, response function from the message / instance
-    {:routing routing
-     :contents contents
-     :transmit transmitter})
+    (let [combined (partial-parser (:data contents))]
+      (if (= combined :partial/consumed)
+        :partial/consumed
+        {:routing routing
+         :contents (assoc contents :data combined)
+         :transmit transmitter})))
   (unhandled [this message provided]
     (unhandled message)))
 
@@ -115,7 +125,7 @@
   [decoders]
   (fn [msg]
     (let [[to routing sender message :as inflated]
-          (tools/transit-unpack msg decoders)]
+          (tools/transit-unpack-bytes msg decoders)]
       [routing {:data message
                 :sender sender
                 :routing routing
@@ -149,9 +159,11 @@
                                        :group group
                                        :topic topic
                                        :decoders decoders})
-        send-topic (or send-topic topic)]
+        send-topic (or send-topic topic)
+        partial-parser (partial/wrap-parser-result decoders)]
     (map->KafkaConduit {:transmitter (topic-transmitter send-topic)
                         :receiver zk-receiver
                         :verbose verbose
                         :unhandled unhandled
-                        :id my-id})))
+                        :id my-id
+                        :partial-parser partial-parser})))

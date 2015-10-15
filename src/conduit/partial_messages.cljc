@@ -18,47 +18,72 @@
           (remove coll? (tree-seq coll? seq input))))
 
 (defn format-part
-  [message-string message-id part parts limit]
+  [message-raw message-string message-id part parts limit]
   (let [a (* part limit)
         b (min (count message-string) (+ a limit))]
     {:message-id message-id
      :part part
      :n-parts parts
+     :user-data (:user-data message-raw)
+     :journey (:journey message-raw)
+     :destination (:destination message-raw)
+     :creator (:creator message-raw)
      :fragment (subs message-string a b)}))
 
-(defn wrap-transmit*
-  [arg-parse transmit-function limit encoders]
-  (fn [& args]
-    (let [[routing message] (arg-parse args)]
-      (if (nil? message)
-        (println "nil message in wrap transmit"))
-      (if (small-enough? limit message)
-        (transmit-function routing message)
-        (let [message-id (rand-int #?(:clj
-                                      Integer/MAX_VALUE
-                                      :cljs
-                                      2147483647))
+(defn gen-id
+  []
+  (rand-int #?(:clj Integer/MAX_VALUE :cljs 2147483647)))
+
+(def debug (atom []))
+
+(defn perhaps-send-partial
+  [message limit encoders transmit-wrapper]
+  (if (small-enough? limit message)
+        (transmit-wrapper message)
+        (let [message-id (gen-id)
               packed (str (tools/transit-pack message encoders))
               n-parts (int (Math/ceil (/ (count packed) (double limit))))]
+          (swap! debug conj {:conduit/full-message message})
           (dotimes [i n-parts]
-            (transmit-function routing
-                               {:conduit/partial-message (format-part packed message-id i n-parts
-                                                                      limit)})))))))
-
-(defn wrap-transmit-separate
-  [transmit-function limit encoders]
-  (wrap-transmit* identity transmit-function limit encoders))
+            (println "sending partial" i "of" n-parts)
+            (let [package {:conduit/partial-message
+                           (format-part message packed message-id i n-parts limit)}]
+              (swap! debug conj package)
+              (transmit-wrapper package))))))
 
 (defn wrap-transmit-bundled
   [transmit-function limit encoders]
-  (wrap-transmit* first
-                  (fn [routing data] (transmit-function [routing data]))
-                  limit
-                  encoders))
+  (fn [[routing message]]
+    (perhaps-send-partial
+     message
+     limit
+     encoders
+     (fn [data]
+       (transmit-function [routing data])))))
+
+(defn wrap-transmit-to-target-bundled
+  [destination transmit-function limit encoders]
+  (fn [[routing message]]
+    (perhaps-send-partial
+     message
+     limit
+     encoders
+     (fn [data]
+       (transmit-function destination [routing data])))))
+
+(defn wrap-transmit-separate
+  [transmit-function limit encoders]
+  (fn [destination routing message]
+    (perhaps-send-partial
+     message
+     limit
+     encoders
+     (fn [data]
+       (transmit-function destination routing data)))))
 
 (defn is-partial?
   [message]
-  (= [:conduit/partial-message] (keys message)))
+  (contains? message :conduit/partial-message))
 
 (defn placeholder
   []
@@ -94,6 +119,9 @@
        partial-messages
        (fn [partials]
          (let [new-state (assoc-in partials [message-id part] message)]
+           (println "Partial message" (pr-str {:message-id message-id
+                                               :part (inc part)
+                                               :of n-parts}))
            (if-not (= n-parts (count (get new-state message-id)))
              new-state
              (let [message-parts (get new-state message-id)
@@ -113,4 +141,6 @@
         (if-not (and (map? message)
                      (is-partial? message))
           message
-          (handle-partial message partial-messages decoders))))))
+          ;; recur here because a partial result can be split!
+          (recur
+           (handle-partial message partial-messages decoders)))))))
