@@ -117,7 +117,9 @@
         :partial/consumed
         {:routing routing
          :contents (assoc contents :data combined)
-         :transmit transmitter})))
+         :transmit (fn [& args]
+                     (when @verbose (println "kafka conduit transmitting" (pr-str args)))
+                     (apply transmitter args))})))
   (unhandled [this message provided]
     (unhandled message)))
 
