@@ -3,7 +3,7 @@
             [conduit.partial-messages :as partial]
             [conduit.tools :as tools]))
 (defn maybe-verbose
-  [f]
+  [f verbose]
   (fn perhaps-verbose-transmission
     [& args]
     (when @verbose
@@ -30,13 +30,13 @@
                       (if-let [uid (:uid contents)]
                         (partial/wrap-transmit-to-target-bundled
                          uid
-                         (maybe-verbose (:send-fn impl))
+                         (maybe-verbose (:send-fn impl) verbose)
                          message-split-threshold
                          encoders)
                         #(tools/error-msg "tried to send" %& "with no UID"))
                       :cljs
                       (partial/wrap-transmit-bundled
-                       (maybe-verbose (:send-fn impl))
+                       (maybe-verbose (:send-fn impl) verbose)
                        message-split-threshold
                        encoders))
           combined (partial-parse contents)
