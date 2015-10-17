@@ -103,13 +103,14 @@
 ;; by transit, splitting it, putting the parts in data structures, encoding
 ;; those with transit, and finally reconstructing on another host. Oddly
 ;; it was passing the tests, but when it crosses hosts it breaks unicode
-;; strings. The base64 step prevents this error.
+;; strings. The <strike>base64</strike> map int step prevents this error.
 (defn packup-for-split
   [datum encoders]
   (-> datum
       (transit-pack encoders)
       #?(:clj (.toString))
       (->>
+       ;; thus increasing message size by at least 3x, fuck
        (map int))
       (pr-str)))
 
@@ -126,3 +127,5 @@
       (transit-unpack decoders)
       #?(:cljs
          (doto (prn "(in unpack-decode-joined)")))))
+
+;; (re-find #"\ufeff" stupid-broken-edn)
