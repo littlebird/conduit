@@ -42,7 +42,7 @@
               packed (tools/packup-for-split message encoders)
               n-parts (int (Math/ceil (/ (count packed) (double limit))))]
           (dotimes [i n-parts]
-            ;; (println "sending partial" i "of" n-parts)
+            (println "sending partial" i "of" n-parts)
             (let [package {:conduit/partial-message
                            (format-part message packed message-id i n-parts limit)}]
               (transmit-wrapper package))))))
@@ -115,7 +115,6 @@
        partial-messages
        (fn [partials]
          (let [new-state (assoc-in partials [message-id part] message)]
-           #_
            (println "Partial message" (pr-str {:message-id message-id
                                                :part (inc part)
                                                :of n-parts}))

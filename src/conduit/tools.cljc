@@ -8,6 +8,7 @@
                          ByteArrayInputStream))]
       :cljs
       [(:require [goog.crypt.base64 :as b64]
+                 [cljs.reader :as reader]
                  [cognitect.transit :as transit])]))
 
 (defn error-msg
@@ -47,14 +48,16 @@
   #?(:clj
      (let [bytes-in (ByteArrayInputStream. bytes)
            reader (transit/reader bytes-in :json decoders)]
-       (transit/read reader))))
+       (transit/read reader))
+     :cljs
+     (transit/read (transit/reader :json decoders) bytes)))
 
 (defn transit-unpack
   [msg decoders]
   #?(:clj
      (transit-unpack-bytes (.getBytes msg) decoders)
      :cljs
-     (transit/read (transit/reader :json decoders) msg)))
+     (transit-unpack-bytes msg decoders)))
 
 (def b64-encode-bytes-raw
   #?(:clj
@@ -69,22 +72,32 @@
      b64/encodeString))
 
 (def b64-encode
-  #(String. (b64-encode-bytes %)))
+  #?(:clj
+     #(String. (b64-encode-bytes %))
+     :cljs
+     b64/encodeString))
 
 (def b64-decode-bytes-raw
   #?(:clj
      b64/decode
      :cljs
-     b64/decodeString))
+     b64/decodeString
+     #_
+     #(js/unescape
+       (js/encodeURIComponent
+        (b64/decodeString %)))))
 
 (def b64-decode-bytes
   #?(:clj
      #(b64/decode (.getBytes %))
      :cljs
-     b64/decodeString))
+     b64-decode-bytes-raw))
 
 (def b64-decode
-  #(String. (b64-decode-bytes %)))
+  #?(:clj
+     #(String. (b64-decode-bytes %))
+     :cljs
+     b64-decode-bytes-raw))
 
 ;; These exist because we've found errors with taking a string generated
 ;; by transit, splitting it, putting the parts in data structures, encoding
@@ -95,12 +108,21 @@
   [datum encoders]
   (-> datum
       (transit-pack encoders)
-      (.toByteArray)
-      (b64-encode-bytes-raw)
-      (String.))) ;; do we need the String step?
+      #?(:clj (.toString))
+      (->>
+       (map int))
+      (pr-str)))
 
 (defn unpack-decode-joined
   [encoded decoders]
   (-> encoded
-      (b64-decode-bytes)
-      (transit-unpack-bytes decoders)))
+      #?(:clj
+         (read-string)
+         :cljs
+         (reader/read-string))
+      (->>
+       (map char)
+       (apply str))
+      (transit-unpack decoders)
+      #?(:cljs
+         (doto (prn "(in unpack-decode-joined)")))))
