@@ -1,9 +1,6 @@
 (ns conduit.fragment
   (:require [clojure.string :as string]
-            #?(:clj
-               [clojure.data.codec.base64 :as b64]
-               :cljs
-               [goog.crypt.base64 :as b64])
+            [conduit.tools :as tools]
             #?(:clj
                [clojure.edn :as rd]
                :cljs
@@ -11,18 +8,6 @@
             [schema.core :as schema]))
 
 (defonce readable (atom false))
-
-(def b64-encode
-  #?(:clj
-     #(String. (b64/encode (.getBytes %)))
-     :cljs
-     b64/encodeString))
-
-(def b64-decode
-  #?(:clj
-     #(String. (b64/decode (.getBytes %)))
-     :cljs
-     b64/decodeString))
 
 (defn parse
   "Creates a map matching the FragmentStateSchema out of a fragment."
@@ -32,7 +17,7 @@
                             [base opts]
                             (let [[_ base opts] (re-matches #"^#/([^\?]*)(\?.*)" fragment)]
                               (when (> (count opts) 1)
-                                [base (b64-decode (subs opts 1))])))
+                                [base (tools/b64-decode (subs opts 1))])))
         opt-string (or (not-empty opt-string) "{}")
         opts (rd/read-string opt-string)]
     (assoc opts :base base)))
@@ -45,7 +30,7 @@
         opts (when opts
                   (if @readable
                     (pr-str opts)
-                    (str "?" (b64-encode (pr-str opts)))))]
+                    (str "?" (tools/b64-encode (pr-str opts)))))]
     (str "#/"
          base
          opts)))

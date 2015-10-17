@@ -34,21 +34,17 @@
   []
   (rand-int #?(:clj Integer/MAX_VALUE :cljs 2147483647)))
 
-(def debug (atom []))
-
 (defn perhaps-send-partial
   [message limit encoders transmit-wrapper]
   (if (small-enough? limit message)
         (transmit-wrapper message)
         (let [message-id (gen-id)
-              packed (str (tools/transit-pack message encoders))
+              packed (tools/packup-for-split message encoders)
               n-parts (int (Math/ceil (/ (count packed) (double limit))))]
-          (swap! debug conj {:conduit/full-message message})
           (dotimes [i n-parts]
-            (println "sending partial" i "of" n-parts)
+            ;; (println "sending partial" i "of" n-parts)
             (let [package {:conduit/partial-message
                            (format-part message packed message-id i n-parts limit)}]
-              (swap! debug conj package)
               (transmit-wrapper package))))))
 
 (defn wrap-transmit-bundled
@@ -119,6 +115,7 @@
        partial-messages
        (fn [partials]
          (let [new-state (assoc-in partials [message-id part] message)]
+           #_
            (println "Partial message" (pr-str {:message-id message-id
                                                :part (inc part)
                                                :of n-parts}))
@@ -128,7 +125,7 @@
                    sorted (sort message-parts)
                    fragments (map (comp :fragment val) sorted)
                    data (apply str fragments)
-                   parsed (tools/transit-unpack data decoders)]
+                   parsed (tools/unpack-decode-joined data decoders)]
                (fill-place constructed parsed)
                (dissoc new-state message-id))))))
     (when-offered constructed :partial/consumed)))
