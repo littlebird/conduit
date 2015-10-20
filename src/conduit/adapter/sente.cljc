@@ -30,7 +30,5 @@
     (unhandled message provided)))
 
 (defn new-sente-conduit
-  [impl verbose unhandled]
-  (map->SenteConduit {:impl impl
-                      :verbose verbose
-                      :unhandled unhandled}))
+  [opts]
+  (map->SenteConduit opts))
