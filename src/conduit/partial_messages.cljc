@@ -36,7 +36,8 @@
 
 (defn perhaps-send-partial
   [message limit encoders transmit-wrapper]
-  (if (small-enough? limit message)
+  (if (or true
+          (small-enough? limit message))
         (transmit-wrapper message)
         (let [message-id (gen-id)
               packed (tools/packup-for-split message encoders)
