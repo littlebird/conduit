@@ -2,7 +2,7 @@
   (:require [conduit.protocol :as conduit]
             [conduit.tools :as tools]))
 
-(defrecord SenteConduit [impl verbose unhandled]
+(defrecord SenteConduit [impl verbose unhandled parse-callback]
   conduit/Conduit
   (identifier [this]
     "sente conduit channel")
@@ -25,6 +25,8 @@
                   :contents contents
                   :transmit transmit
                   :uid (:uid message)}]
+      (when parse-callback
+        (parse-callback result))
       result))
   (unhandled [this message provided]
     (unhandled message provided)))
