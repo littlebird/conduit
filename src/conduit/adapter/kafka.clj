@@ -154,8 +154,9 @@
           ;; if supplied, request-chan allows "pull" of messages - you can let
           ;; other peers in your group take a message by not putting messages onto this
           ;; channel
-          (println "Kafka Conduit in group " group " grabbing a job from topic" topic "as requested.")
-          (>/<! request-chan))
+          (println "Kafka Conduit in group" group "waiting before grabbing a job from topic" topic "as requested.")
+          (>/<! request-chan)
+          (println "Kafka Conduit in group" group "grabbing a job from topic" topic "."))
         (recur (.message (.next it)))))
     result))
 
