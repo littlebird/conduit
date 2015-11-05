@@ -31,17 +31,30 @@
   (.setLevel (LoggerFactory/getLogger Logger/ROOT_LOGGER_NAME)
              Level/WARN))
 
-(defn make-transmitter
-  [my-id producer topic encoders]
-  (fn kafka-transmitter
-    [to route message]
-    ;; easy optimization -- pooling or other re-use of encoders
-    (let [data [to route my-id message]
-          baos (ByteArrayOutputStream. 512)
+(defn encoded-transmitter
+  [producer encoders]
+  (fn [topic data]
+    (let [baos (ByteArrayOutputStream. 512)
           writer (transit/writer baos :json encoders)
           _ (transit/write writer data)
           packed (produce/message topic (.toByteArray baos))]
       (produce/send-message producer packed))))
+
+(defn make-transmitter
+  [my-id producer topic encoders]
+  (let [encoded-transmit (encoded-transmitter producer encoders)]
+    (fn kafka-transmitter
+      [to route message]
+      (let [data [to route my-id message]]
+        (encoded-transmit topic data)))))
+
+(defn make-producer
+  [broker opts]
+  (produce/producer
+   (merge
+    {"metadata.broker.list" broker ; string host:port
+     "serializer.class" "kafka.serializer.DefaultEncoder"
+     "partitioner.class" "kafka.producer.DefaultPartitioner"})))
 
 (defrecord KafkaPeer [encoders decoders socket-router group-prefix owner]
   component/Lifecycle
@@ -58,13 +71,9 @@
                      {:zk-port 2181
                       :kafka-port 9092}
                      config)
-             producer (produce/producer
-                       (merge
-                        {"metadata.broker.list" (str (:zk-host config) \:
-                                                     (:kafka-port config))
-                         "serializer.class" "kafka.serializer.DefaultEncoder"
-                         "partitioner.class" "kafka.producer.DefaultPartitioner"}
-                        (:producer-opts config)))
+             producer (make-producer (str (:zk-host config) \:
+                                          (:kafka-port config))
+                                     (:producer-opts config))
              id (:id config (UUID/randomUUID))
              zk-consumer (zk-consume/consumer
                           (merge
@@ -127,12 +136,16 @@
   (unhandled [this message provided]
     (unhandled message)))
 
+(defn decode-transit-baos
+  [baos decoders]
+  (let [bytes-in (ByteArrayInputStream. baos)
+        reader (transit/reader bytes-in :json decoders)]
+     (transit/read reader)))
+
 (defn decoder
   [decoders]
   (fn [msg]
-    (let [bytes-in (ByteArrayInputStream. msg)
-          reader (transit/reader bytes-in :json decoders)
-          [to routing sender message :as inflated] (transit/read reader)]
+    (let [[to routing sender message :as inflated] (decode-transit-baos msg decoders)]
       [routing {:data message
                 :sender sender
                 :routing routing
