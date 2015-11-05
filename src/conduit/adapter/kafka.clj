@@ -139,7 +139,7 @@
                 :to to}])))
 
 (defn make-zk-receiver
-  [{:keys [my-id consumer topic decoders request-chan]}]
+  [{:keys [my-id consumer group topic decoders request-chan]}]
   (let [decode (decoder decoders)
         stream (zk-consume/create-message-stream consumer topic)
         it (.iterator stream)
