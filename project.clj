@@ -1,6 +1,6 @@
-(defproject littlebird-aviary/conduit "0.0.16"
+(defproject littlebird-aviary/conduit "0.0.17"
   :dependencies [[org.clojure/clojure "1.7.0"]
-                 [org.clojure/core.async "0.1.346.0-17112a-alpha"]
+                 [org.clojure/core.async "0.2.371"]
                  [com.taoensso/encore "1.38.0"]
                  [com.taoensso/timbre "3.3.1"
                   :exclusions [com.taoensso/encore]]

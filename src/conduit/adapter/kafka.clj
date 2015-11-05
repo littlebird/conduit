@@ -139,7 +139,7 @@
                 :to to}])))
 
 (defn make-zk-receiver
-  [{:keys [my-id consumer topic decoders]}]
+  [{:keys [my-id consumer topic decoders request-chan]}]
   (let [decode (decoder decoders)
         stream (zk-consume/create-message-stream consumer topic)
         it (.iterator stream)
@@ -150,11 +150,18 @@
         (when (or (not to)
                   (= to my-id))
           (>/>! result payload))
+        (when request-chan
+          ;; if supplied, request-chan allows "pull" of messages - you can let
+          ;; other peers in your group take a message by not putting messages onto this
+          ;; channel
+          (println "Kafka Conduit in group " group " grabbing a job from topic" topic "as requested.")
+          (>/<! request-chan))
         (recur (.message (.next it)))))
     result))
 
 (defn new-kafka-conduit
   [{{:keys [id topic-transmitter producer zk-consumer brokers encoders decoders] :as impl} :impl
+    request-chan :request-chan
     group :group
     topic :topic
     send-topic :send-topic
@@ -165,7 +172,8 @@
                                        :consumer zk-consumer
                                        :group group
                                        :topic topic
-                                       :decoders decoders})
+                                       :decoders decoders
+                                       :request-chan request-chan})
         send-topic (or send-topic topic)]
     (map->KafkaConduit {:transmitter (topic-transmitter send-topic)
                         :receiver zk-receiver
