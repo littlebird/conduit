@@ -35,28 +35,36 @@
     (let [{:keys [routing contents transmit] :as message} (conduit/parse conduit msg)
           unhandled (partial conduit/unhandled conduit)
           handler (get routes routing unhandled)
-          provided (assoc provided :transmit transmit :routing routing)]
+          provided (assoc provided :transmit transmit :routing routing)
+          readable #?(:clj
+                      pr-str
+                      :cljs
+                      str)]
       (when (conduit/verbose? conduit)
         (tools/debug-msg (str (conduit/identifier conduit)
                               " routing from " routing " with handler " handler
                               (when (= handler unhandled) ", unhandled"))))
       (if (socket-async/out-channel? handler)
         (>/go (>/>! handler [contents provided]))
-        (future (try (handler contents provided)
-                     (catch
-                         #?(:clj
-                            Exception
-                            :cljs
-                            js/Object)
-                       e
-                       (tools/error-msg (str (conduit/identifier conduit)
-                                             " socket-loop uncaught exception"
-                                             (pr-str {:routing routing
-                                                      :contents contents})
-                                             \newline
-                                             (pr-str message)
-                                             \newline
-                                             (pr-str e))))))))))
+        (#?(:clj
+            future
+            :cljs
+            do)
+         (try (handler contents provided)
+              (catch
+                  #?(:clj
+                     Exception
+                     :cljs
+                     js/Object)
+                e
+                (tools/error-msg (str (conduit/identifier conduit)
+                                      " socket-loop uncaught exception"
+                                      (readable {:routing routing
+                                                 :contents contents})
+                                      \newline
+                                      (readable message)
+                                      \newline
+                                      (readable e))))))))))
 
 (defn run-router
   [provided shutdown & [parallelism]]
