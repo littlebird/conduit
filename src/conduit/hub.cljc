@@ -43,9 +43,6 @@
      :conduit
      owner
      (fn []
-       (router/stop-router (:impl component)
-                           (:provided component)
-                           (:routes component))
        (>/go (some-> component :shutdown (>/>! :done)))
        (dissoc component :conduit :after-handshake :shutdown)))))
 

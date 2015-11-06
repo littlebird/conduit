@@ -25,16 +25,7 @@
                 (= from shutdown))
           (tools/debug-msg (str (conduit/identifier conduit)
                                 " conduit socket-loop shutting down"))
-          (do (try
-                (dispatch message provided)
-                (catch
-                    #?(:clj Exception
-                       :cljs js/Object)
-                  e
-                  (tools/error-msg (str (conduit/identifier conduit)
-                                        " socket-loop uncaught exception"
-                                        (pr-str {:error e
-                                                 :message message})))))
+          (do (dispatch message provided)
               (recur)))))))
 
 (defn dispatcher
@@ -51,7 +42,21 @@
                               (when (= handler unhandled) ", unhandled"))))
       (if (socket-async/out-channel? handler)
         (>/go (>/>! handler [contents provided]))
-        (handler contents provided)))))
+        (future (try (handler contents provided)
+                     (catch
+                         #?(:clj
+                            Exception
+                            :cljs
+                            js/Object)
+                       e
+                       (tools/error-msg (str (conduit/identifier conduit)
+                                             " socket-loop uncaught exception"
+                                             (pr-str {:routing routing
+                                                      :contents contents})
+                                             \newline
+                                             (pr-str message)
+                                             \newline
+                                             (pr-str e))))))))))
 
 (defn run-router
   [provided shutdown & [parallelism]]
@@ -62,8 +67,3 @@
                  (dissoc provided :routes :impl)
                  (>/tap shutdown (>/chan))
                  (dispatcher (:impl provided) (:routes provided)))))
-
-(defn stop-router
-  [& args]
-  ;; TBI
-  )

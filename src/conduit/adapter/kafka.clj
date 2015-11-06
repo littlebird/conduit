@@ -8,9 +8,7 @@
             [clojure.core.async :as >]
             [noisesmith.component :as component]
             [conduit.tools.component-util :as util])
-  (:import org.slf4j.LoggerFactory
-           (ch.qos.logback.classic Logger Level)
-           (java.util UUID
+  (:import (java.util UUID
                       Date)
            (java.io ByteArrayInputStream
                     ByteArrayOutputStream)))
@@ -25,11 +23,6 @@
 ;; bin/kafka-topics.sh --list --zookeeper localhost:2181
 (defn list-topics
   [])
-
-(defn stfu-up
-  []
-  (.setLevel (LoggerFactory/getLogger Logger/ROOT_LOGGER_NAME)
-             Level/WARN))
 
 (defn encoded-transmitter
   [producer encoders]
@@ -64,7 +57,6 @@
      :kafka-peer
      owner
      (fn []
-       (stfu-up)
        (assert (-> component :config :config :kafka :zk-host) "must specify host")
        (let [config (-> component :config :config :kafka)
              config (merge
@@ -156,21 +148,27 @@
   (let [decode (decoder decoders)
         stream (zk-consume/create-message-stream consumer topic)
         it (.iterator stream)
+        get-next-message #(.message (.next it))
         result (>/chan)]
-    (>/go-loop [msg (.message (.next it))]
-      (let [payload (decode msg)
-            to (:to (second payload))]
-        (when (or (not to)
-                  (= to my-id))
-          (>/>! result payload))
-        (when request-chan
-          ;; if supplied, request-chan allows "pull" of messages - you can let
-          ;; other peers in your group take a message by not putting messages onto this
-          ;; channel
-          (println "Kafka Conduit in group" group "waiting before grabbing a job from topic" topic "as requested.")
-          (>/<! request-chan)
-          (println "Kafka Conduit in group" group "grabbing a job from topic" topic "."))
-        (recur (.message (.next it)))))
+    (future
+      (loop [msg (get-next-message)]
+        (try
+          (let [payload (decode msg)
+                to (:to (second payload))]
+            (when (and payload
+                       (or (not to)
+                                   (= to my-id)))
+              (>/>!! result payload))
+            (when request-chan
+              ;; if supplied, request-chan allows "pull" of messages - you can let
+              ;; other peers in your group take a message by not putting messages onto this
+              ;; channel
+              (println "Kafka Conduit in group" group "waiting before grabbing a job from topic" topic "as requested.")
+              (>/<!! request-chan)
+              (println "Kafka Conduit in group" group "grabbing a job from topic" topic ".")))
+          (catch Exception e
+            (println "Error in kafka conduit zk-receiver" (pr-str e))))
+        (recur (get-next-message))))
     result))
 
 (defn new-kafka-conduit
