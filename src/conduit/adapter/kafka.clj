@@ -1,114 +1,20 @@
 (ns conduit.adapter.kafka
   (:require [clj-kafka.zk :as zk]
+            [conduit.kafka :as kafka]
             [conduit.protocol :as conduit]
             [conduit.tools :as tools]
-            [cognitect.transit :as transit]
-            [clj-kafka.producer :as produce]
-            [clj-kafka.consumer.zk :as zk-consume]
             [clojure.core.async :as >]
             [noisesmith.component :as component]
             [conduit.tools.component-util :as util])
-  (:import (java.util UUID
-                      Date)
-           (java.io ByteArrayInputStream
-                    ByteArrayOutputStream)))
+  (:import (java.util UUID)))
 
-
-;;; CREATE TOPIC
-;; bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic test
-(defn make-topic
-  [topic])
-
-;;; FIND TOPICS
-;; bin/kafka-topics.sh --list --zookeeper localhost:2181
-(defn list-topics
-  [])
-
-(defn encoded-transmitter
-  [producer encoders]
-  (fn [topic data]
-    (let [baos (ByteArrayOutputStream. 512)
-          writer (transit/writer baos :json encoders)
-          _ (transit/write writer data)
-          packed (produce/message topic (.toByteArray baos))]
-      (produce/send-message producer packed))))
-
-(defn make-transmitter
+(defn make-routing-transmitter
   [my-id producer topic encoders]
-  (let [encoded-transmit (encoded-transmitter producer encoders)]
+  (let [encoded-transmit (kafka/encoded-transmitter producer encoders)]
     (fn kafka-transmitter
       [to route message]
       (let [data [to route my-id message]]
         (encoded-transmit topic data)))))
-
-(defn make-producer
-  [broker opts]
-  (produce/producer
-   (merge
-    {"metadata.broker.list" broker ; string host:port
-     "serializer.class" "kafka.serializer.DefaultEncoder"
-     "partitioner.class" "kafka.producer.DefaultPartitioner"})))
-
-(defrecord KafkaPeer [encoders decoders socket-router group-prefix owner]
-  component/Lifecycle
-  (start [component]
-    (util/start
-     component
-     :kafka-peer
-     owner
-     (fn []
-       (assert (-> component :config :config :kafka :zk-host) "must specify host")
-       (let [config (-> component :config :config :kafka)
-             config (merge
-                     {:zk-port 2181
-                      :kafka-port 9092}
-                     config)
-             producer (make-producer (str (:zk-host config) \:
-                                          (:kafka-port config))
-                                     (:producer-opts config))
-             id (:id config (UUID/randomUUID))
-             zk-consumer (zk-consume/consumer
-                          (merge
-                           {"zookeeper.connect" (str (:zk-host config) \:
-                                                     (:zk-port config))
-                            "group.id" (str group-prefix id)
-                            "auto.offset.reset" "largest"
-                            "auto.commit.interval.ms" "200"
-                            "auto.commit.enable" "true"}
-                           (:consumer-opts config)))
-             topic-transmitter (fn topic-transmitter
-                                 [topic]
-                                 (make-transmitter id producer topic encoders))
-             brokers #(zk/brokers
-                       {"zookeeper.connect"
-                        (str (:zk-host config) \: (:zk-port config))})]
-         (assoc component
-                :kafka-peer :started
-                :topic-transmitter topic-transmitter
-                :id id
-                :socket-router socket-router
-                :encoders encoders
-                :decoders decoders
-                :brokers brokers
-                :producer producer
-                :zk-consumer zk-consumer)))))
-  (stop [component]
-    (util/stop
-     component
-     :kafka-peer
-     owner
-     (fn []
-       (dissoc component
-               :kafka-peer
-               :encoders
-               :decoders
-               :producer
-               :zk-consumer
-               :brokers)))))
-
-(defn new-kafka-peer
-  [{:keys [owner encoders decoders socket-router group-prefix zk-host] :as config}]
-  (map->KafkaPeer config))
 
 (defrecord KafkaConduit [transmitter receiver
                          verbose unhandled
@@ -128,28 +34,78 @@
   (unhandled [this message provided]
     (unhandled message)))
 
-(defn decode-transit-baos
-  [baos decoders]
-  (let [bytes-in (ByteArrayInputStream. baos)
-        reader (transit/reader bytes-in :json decoders)]
-     (transit/read reader)))
+(defrecord KafkaPeer [encoders decoders socket-router group-prefix owner]
+  component/Lifecycle
+  (start [component]
+    (util/start
+     component
+     :kafka-peer
+     owner
+     (fn []
+       (try
+         (assert (-> component :config :config :kafka :zk-host) "must specify host")
+         (let [config (-> component :config :config :kafka)
+               config (merge
+                       {:zk-port 2181
+                        :kafka-port 9092}
+                       config)
+               producer (kafka/make-producer (str (:zk-host config) \:
+                                                  (:kafka-port config))
+                                             (:producer-opts config))
+               id (:id config (UUID/randomUUID))
+               zk-consumer (kafka/make-consumer (assoc (:consumer-opts config)
+                                                       :host (str (:zk-host config) \: (:zk-port config))
+                                                       :group (str group-prefix id)))
+               topic-transmitter (fn topic-transmitter
+                                   [topic]
+                                   (make-routing-transmitter id producer topic encoders))
+               brokers #(zk/brokers
+                         {"zookeeper.connect"
+                          (str (:zk-host config) \: (:zk-port config))})]
+           (assoc component
+                  :kafka-peer :started
+                  :topic-transmitter topic-transmitter
+                  :id id
+                  :socket-router socket-router
+                  :encoders encoders
+                  :decoders decoders
+                  :brokers brokers
+                  :producer producer
+                  :zk-consumer zk-consumer))
+         (catch Exception e (println "error starting kafka peer" e)
+                (throw e))))))
+  (stop [component]
+    (util/stop
+     component
+     :kafka-peer
+     owner
+     (fn []
+       (dissoc component
+               :kafka-peer
+               :encoders
+               :decoders
+               :producer
+               :zk-consumer
+               :brokers)))))
 
-(defn decoder
+(defn new-kafka-peer
+  [{:keys [owner encoders decoders socket-router group-prefix zk-host] :as config}]
+  (map->KafkaPeer config))
+
+(defn routing-decoder
   [decoders]
   (fn [msg]
-    (let [[to routing sender message :as inflated] (decode-transit-baos msg decoders)]
+    (let [[to routing sender message :as inflated] (kafka/decode-transit-baos msg decoders)]
       [routing {:data message
                 :sender sender
                 :routing routing
                 :to to}])))
 
-(defn make-zk-receiver
+(defn make-zk-routing-receiver
   [{:keys [my-id consumer group topic decoders request-chan]}]
-  (let [decode (decoder decoders)
-        stream (zk-consume/create-message-stream consumer topic)
-        it (.iterator stream)
-        get-next-message #(.message (.next it))
-        result (>/chan)]
+  (let [decode (routing-decoder decoders)
+        result (>/chan)
+        get-next-message (kafka/zk-topic-source consumer topic)]
     (future
       (loop [msg (get-next-message)]
         (try
@@ -163,9 +119,12 @@
               ;; if supplied, request-chan allows "pull" of messages - you can let
               ;; other peers in your group take a message by not putting messages onto this
               ;; channel
-              (println "Kafka Conduit in group" group "waiting before grabbing a job from topic" topic "as requested.")
+              (println "Kafka Conduit in group" group
+                       "waiting before grabbing a job from topic" topic
+                       "as requested.")
               (>/<!! request-chan)
-              (println "Kafka Conduit in group" group "grabbing a job from topic" topic ".")))
+              (println "Kafka Conduit in group" group
+                       "grabbing a job from topic" (str topic "."))))
           (catch Exception e
             (println "Error in kafka conduit zk-receiver" (pr-str e))))
         (recur (get-next-message))))
@@ -180,12 +139,12 @@
     verbose :verbose
     unhandled :unhandled}]
   (let [my-id (or id (UUID/randomUUID))
-        zk-receiver (make-zk-receiver {:my-id my-id
-                                       :consumer zk-consumer
-                                       :group group
-                                       :topic topic
-                                       :decoders decoders
-                                       :request-chan request-chan})
+        zk-receiver (make-zk-routing-receiver {:my-id my-id
+                                               :consumer zk-consumer
+                                               :group group
+                                               :topic topic
+                                               :decoders decoders
+                                               :request-chan request-chan})
         send-topic (or send-topic topic)]
     (map->KafkaConduit {:transmitter (topic-transmitter send-topic)
                         :receiver zk-receiver
