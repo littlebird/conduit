@@ -3,8 +3,8 @@
             [conduit.protocol :as conduit]
             [conduit.tools :as tools]
             [cognitect.transit :as transit]
-            [clj-kafka.producer :as producer]
-            [clj-kafka.consumer.zk :as zk-consume]
+            [clj-kafka.new.producer :as producer]
+            [clj-kafka.consumer.zk :as consumer]
             [clojure.core.async :as >]
             [noisesmith.component :as component]
             [conduit.tools.component-util :as util])
@@ -30,8 +30,8 @@
     (let [baos (ByteArrayOutputStream. 512)
           writer (transit/writer baos :json encoders)
           _ (transit/write writer data)
-          packed (producer/message topic (.toByteArray baos))]
-      (producer/send-message producer packed))))
+          packed (producer/record topic (.toByteArray baos))]
+      (producer/send producer packed))))
 
 (defn make-transmitter
   [my-id producer topic encoders]
@@ -45,9 +45,10 @@
   [broker opts]
   (producer/producer
    (merge
-    {"metadata.broker.list" broker ; string host:port
-     "serializer.class" "kafka.serializer.DefaultEncoder"
-     "partitioner.class" "kafka.producer.DefaultPartitioner"})))
+    {"bootstrap.servers" broker} ; string host:port}
+    opts)
+   (producer/byte-array-serializer)
+   (producer/byte-array-serializer)))
 
 (defrecord KafkaPeer [encoders decoders socket-router group-prefix owner]
   component/Lifecycle
@@ -67,7 +68,7 @@
                                           (:kafka-port config))
                                      (:producer-opts config))
              id (:id config (UUID/randomUUID))
-             zk-consumer (zk-consume/consumer
+             zk-consumer (consumer/consumer
                           (merge
                            {"zookeeper.connect" (str (:zk-host config) \:
                                                      (:zk-port config))
@@ -148,7 +149,7 @@
 (defn make-zk-receiver
   [{:keys [my-id consumer group topic decoders request-chan]}]
   (let [decode (decoder decoders)
-        stream (zk-consume/create-message-stream consumer topic)
+        stream (consumer/create-message-stream consumer topic)
         it (.iterator stream)
         get-next-message #(.message (.next it))
         result (>/chan)]
