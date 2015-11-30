@@ -3,7 +3,7 @@
             [conduit.protocol :as conduit]
             [conduit.tools :as tools]
             [cognitect.transit :as transit]
-            [clj-kafka.producer :as produce]
+            [clj-kafka.producer :as producer]
             [clj-kafka.consumer.zk :as zk-consume]
             [clojure.core.async :as >]
             [noisesmith.component :as component]
@@ -30,8 +30,8 @@
     (let [baos (ByteArrayOutputStream. 512)
           writer (transit/writer baos :json encoders)
           _ (transit/write writer data)
-          packed (produce/message topic (.toByteArray baos))]
-      (produce/send-message producer packed))))
+          packed (producer/message topic (.toByteArray baos))]
+      (producer/send-message producer packed))))
 
 (defn make-transmitter
   [my-id producer topic encoders]
@@ -43,7 +43,7 @@
 
 (defn make-producer
   [broker opts]
-  (produce/producer
+  (producer/producer
    (merge
     {"metadata.broker.list" broker ; string host:port
      "serializer.class" "kafka.serializer.DefaultEncoder"
@@ -82,16 +82,18 @@
              brokers #(zk/brokers
                        {"zookeeper.connect"
                         (str (:zk-host config) \: (:zk-port config))})]
-         (assoc component
-                :kafka-peer :started
-                :topic-transmitter topic-transmitter
-                :id id
-                :socket-router socket-router
-                :encoders encoders
-                :decoders decoders
-                :brokers brokers
-                :producer producer
-                :zk-consumer zk-consumer)))))
+         (assoc
+          component
+          :kafka-peer :started
+          :topic-transmitter topic-transmitter
+          :id id
+          :socket-router socket-router
+          :encoders encoders
+          :decoders decoders
+          :brokers brokers
+          :producer producer
+          :zk-consumer zk-consumer)))))
+
   (stop [component]
     (util/stop
      component
