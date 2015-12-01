@@ -4,33 +4,51 @@
             [conduit.tools.component-util :as util])
   (:import (java.util.concurrent ScheduledThreadPoolExecutor TimeUnit)
            (java.util Date)
-           (java.net InetAddress)))
+           (java.net InetAddress)
+           (java.lang.management ManagementFactory)
+           (javax.management ObjectName)))
 
-(defn generate-status
-  ([] (generate-status {}))
-  ([static]
-   (let [runtime (Runtime/getRuntime)
+(defn get-cpu
+  []
+  (let [mbs (ManagementFactory/getPlatformMBeanServer)
+        oname (ObjectName/getInstance "java.lang:type=OperatingSystem")
+        ls (.getAttributes mbs oname (into-array ["ProcessCpuLoad"]))
+        usages-raw (map #(.getValue %) ls)
+        usage (map #(/ (* % 1000) 10.0) usages-raw)]
+    usage))
+
+(defn get-all-stacks
+  []
+  (map #(list (str (key %))
+              (clojure.string/join \newline (val %)))
+       (Thread/getAllStackTraces)))
+
+(defn get-memory-usage
+  []
+  (let [runtime (Runtime/getRuntime)
          unused (.freeMemory runtime)
          limit (.maxMemory runtime)
          allocated (.totalMemory (Runtime/getRuntime))
          used (- allocated unused)
          breathing-room (- limit used)
-         summary (str (int (* 100 (/ (double used) limit))) \%)
-         stack-traces
-         (map #(list (str (key %))
-                     (clojure.string/join \newline (val %)))
-              (Thread/getAllStackTraces))]
-     (merge
-      {:memory {:summary summary
-                :unused unused
-                :limit limit
-                :allocated allocated
-                :used used
-                :breathing-room breathing-room}
-       :stacks stack-traces
-       :time (Date.)
-       :host (str (InetAddress/getLocalHost))}
-      static))))
+         summary (str (int (* 100 (/ (double used) limit))) \%)]
+    {:summary summary
+     :unused unused
+     :limit limit
+     :allocated allocated
+     :used used
+     :breathing-room breathing-room}))
+
+(defn generate-status
+  ([] (generate-status {}))
+  ([static]
+   (merge
+    {:memory (get-memory-usage)
+     :cpu (get-cpu)
+     :stacks (get-all-stacks)
+     :time (Date.)
+     :host (str (InetAddress/getLocalHost))}
+    static)))
 
 (defn create-thread-executor
   [size]
@@ -75,8 +93,8 @@
        (dissoc component :stop)))))
 
 (defn new-kafka-status
-  [{:keys [frequency owner status topic executor] :as opts}]
+  [{:keys [frequency owner topic executor] :as opts}]
   (let [static {:owner owner}
         frequency (or frequency 15000)
         executor (or executor (create-thread-executor 1))]
-    (map->KafkaStatus {:owner owner :topic topic :register executor :status generate-status})))
+    (map->KafkaStatus {:owner owner :topic topic :register (partial executor frequency) :status generate-status})))
