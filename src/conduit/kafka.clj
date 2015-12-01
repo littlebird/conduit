@@ -58,5 +58,3 @@
         it (.iterator stream)
         get-next-message #(.message (.next it))]
     get-next-message))
-
-
