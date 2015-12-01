@@ -1,7 +1,7 @@
 (ns conduit.kafka
-  (:require [clj-kafka.consumer.zk :as zk-consume]
-            [cognitect.transit :as transit]
-            [clj-kafka.producer :as produce])
+  (:require [cognitect.transit :as transit]
+            [clj-kafka.consumer.zk :as consumer]
+            [clj-kafka.new.producer :as producer])
   (:import (java.io ByteArrayInputStream
                     ByteArrayOutputStream)))
 
@@ -21,16 +21,17 @@
     (let [baos (ByteArrayOutputStream. 512)
           writer (transit/writer baos :json encoders)
           _ (transit/write writer data)
-          packed (produce/message topic (.toByteArray baos))]
-      (produce/send-message producer packed))))
+          packed (producer/record topic (.toByteArray baos))]
+      (producer/send producer packed))))
 
 (defn make-producer
   [broker opts]
-  (produce/producer
+  (producer/producer
    (merge
-    {"metadata.broker.list" broker ; string host:port
-     "serializer.class" "kafka.serializer.DefaultEncoder"
-     "partitioner.class" "kafka.producer.DefaultPartitioner"})))
+    {"bootstrap.servers" broker} ; string host:port
+    opts)
+   (producer/byte-array-serializer)
+   (producer/byte-array-serializer)))
 
 (defn decode-transit-baos
   [baos decoders]
@@ -40,7 +41,7 @@
 
 (defn make-consumer
   [opts]
-  (zk-consume/consumer
+  (consumer/consumer
    (merge
     {"zookeeper.connect" (:host opts)
      "group.id" (:group opts)
@@ -54,7 +55,7 @@
 
 (defn zk-topic-source
   [consumer topic]
-  (let [stream (zk-consume/create-message-stream consumer topic)
+  (let [stream (consumer/create-message-stream consumer topic)
         it (.iterator stream)
         get-next-message #(.message (.next it))]
     get-next-message))

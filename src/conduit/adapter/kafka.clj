@@ -1,5 +1,6 @@
 (ns conduit.adapter.kafka
   (:require [clj-kafka.zk :as zk]
+            [clj-kafka.consumer.zk :as consumer]
             [conduit.kafka :as kafka]
             [conduit.protocol :as conduit]
             [conduit.tools :as tools]
@@ -104,8 +105,10 @@
 (defn make-zk-routing-receiver
   [{:keys [my-id consumer group topic decoders request-chan]}]
   (let [decode (routing-decoder decoders)
-        result (>/chan)
-        get-next-message (kafka/zk-topic-source consumer topic)]
+        stream (consumer/create-message-stream consumer topic)
+        it (.iterator stream)
+        get-next-message #(.message (.next it))
+        result (>/chan)]
     (future
       (loop [msg (get-next-message)]
         (try
