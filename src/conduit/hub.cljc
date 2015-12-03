@@ -9,7 +9,7 @@
                :cljs
                [cljs.core.async :as >])))
 
-(defrecord Conduit [owner constructor routes-lookup]
+(defrecord Conduit [owner constructor routes-lookup parallelism]
   component/Lifecycle
   (start [component]
     (component-tools/start
@@ -31,7 +31,8 @@
                                    :routes (get-in component routes-lookup)
                                    :impl impl
                                    :handshake invoke-handshake)
-                             (>/mult shutdown))
+                             (>/mult shutdown)
+                             (or parallelism 1))
          (assoc component
                 :impl impl
                 :conduit :running
