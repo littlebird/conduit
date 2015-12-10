@@ -2,7 +2,7 @@
   (:require [conduit.protocol :as conduit]
             [conduit.tools :as tools]))
 
-(defrecord SenteConduit [impl verbose unhandled parse-callback]
+(defrecord SenteConduit [impl verbose unhandled parse-callback transmit-wrapper]
   conduit/Conduit
   (identifier [this]
     "sente conduit channel")
@@ -17,10 +17,10 @@
                                [routing contents])
           transmit #?(:clj
                       (if-let [uid (:uid contents)]
-                        (partial (:send-fn impl) uid)
+                        ((or transmit-wrapper partial) (:send-fn impl) uid)
                         #(tools/error-msg "tried to send" %& "with no UID"))
                       :cljs
-                      (:send-fn impl))
+                      ((or transmit-wrapper identity) (:send-fn impl)))
           result {:routing routing
                   :contents contents
                   :transmit transmit

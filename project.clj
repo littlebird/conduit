@@ -1,4 +1,4 @@
-(defproject littlebird-aviary/conduit "0.0.24"
+(defproject littlebird-aviary/conduit "0.0.25"
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [org.clojure/core.async "0.2.371"]
                  [com.taoensso/encore "1.38.0"]
