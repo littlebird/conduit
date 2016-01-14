@@ -18,7 +18,7 @@
           transmit #?(:clj
                       (if-let [uid (:uid contents)]
                         ((or transmit-wrapper partial) (:send-fn impl) uid)
-                        #(tools/error-msg "tried to send" %& "with no UID"))
+                        #(tools/error-msg (str "tried to send" %& "with no UID")))
                       :cljs
                       ((or transmit-wrapper identity) (:send-fn impl)))
           result {:routing routing

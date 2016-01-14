@@ -79,7 +79,10 @@
                transmitter (kafka/encoded-transmitter producer {})
                process-handle (register (fn kafka-status-logger
                                           []
-                                          (transmitter topic (status))))]
+                                          (try
+                                            (transmitter topic (status))
+                                            (catch Exception e
+                                              (println "error in status logger" (str e))))))]
            (assoc component :stop process-handle))
          (catch Exception e (println "error starting kafka status logger" e)
                 (throw e))))))
