@@ -35,7 +35,7 @@
     (let [{:keys [routing contents transmit] :as message} (conduit/parse conduit msg)
           unhandled (partial conduit/unhandled conduit)
           handler (get routes routing unhandled)
-          provided (assoc provided :transmit transmit :routing routing)
+          provided (assoc provided :transmit transmit :routing routing :message msg)
           readable #?(:clj
                       pr-str
                       :cljs
