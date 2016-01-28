@@ -3,7 +3,14 @@
             [clj-kafka.consumer.zk :as consumer]
             [clj-kafka.new.producer :as producer])
   (:import (java.io ByteArrayInputStream
-                    ByteArrayOutputStream)))
+                    ByteArrayOutputStream)
+           org.slf4j.LoggerFactory
+           (ch.qos.logback.classic Logger Level)))
+
+(defn stfu-up
+  []
+  (.setLevel (LoggerFactory/getLogger Logger/ROOT_LOGGER_NAME)
+             Level/WARN))
 
 ;;; CREATE TOPIC
 ;; bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic test

@@ -116,7 +116,7 @@
                 to (:to (second payload))]
             (when (and payload
                        (or (not to)
-                                   (= to my-id)))
+                           (= to my-id)))
               (>/>!! result payload))
             (when request-chan
               ;; if supplied, request-chan allows "pull" of messages - you can let
