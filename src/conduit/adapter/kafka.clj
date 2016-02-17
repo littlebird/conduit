@@ -44,7 +44,8 @@
      owner
      (fn []
        (try
-         (assert (-> component :config :config :kafka :zk-host) "must specify host")
+         (assert (-> component :config :config :kafka :zk-connect) "must specify zookeeper")
+         (assert (-> component :config :config :kafka :kafka-connect) "must specify kafka")
          (let [config (-> component :config :config :kafka)
                producer (kafka/make-producer (:kafka-connect config)
                                              (:producer-opts config))
