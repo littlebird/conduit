@@ -46,23 +46,16 @@
        (try
          (assert (-> component :config :config :kafka :zk-host) "must specify host")
          (let [config (-> component :config :config :kafka)
-               config (merge
-                       {:zk-port 2181
-                        :kafka-port 9092}
-                       config)
-               producer (kafka/make-producer (str (:zk-host config) \:
-                                                  (:kafka-port config))
+               producer (kafka/make-producer (:kafka-connect config)
                                              (:producer-opts config))
                id (:id config (UUID/randomUUID))
                zk-consumer (kafka/make-consumer (assoc (:consumer-opts config)
-                                                       :host (str (:zk-host config) \: (:zk-port config))
+                                                       :host (:zk-connect config)
                                                        :group (str group-prefix id)))
                topic-transmitter (fn topic-transmitter
                                    [topic]
                                    (make-routing-transmitter id producer topic encoders))
-               brokers #(zk/brokers
-                         {"zookeeper.connect"
-                          (str (:zk-host config) \: (:zk-port config))})]
+               brokers #(zk/brokers {"zookeeper.connect" (:zk-connect config)})]
            (assoc component
                   :kafka-peer :started
                   :topic-transmitter topic-transmitter
