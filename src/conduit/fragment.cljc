@@ -37,15 +37,22 @@
         opts (rd/read-string opt-string)]
     (assoc opts :base base)))
 
+(defn must-be-readable
+  [d]
+  (assert (= d
+             (rd/read-string (pr-str d)))))
+
 (defn construct
   [fragment]
   {:pre [(map? fragment)]}
   (let [base (:base fragment)
         opts (not-empty (dissoc fragment :base))
+        ;; this is meant to blow up if you put bad crap in the data
+        _ (must-be-readable opts)
         opts (when opts
-                  (if @readable
-                    (pr-str opts)
-                    (str "?" (b64-encode (pr-str opts)))))]
+               (if @readable
+                 (pr-str opts)
+                 (str "?" (b64-encode (pr-str opts)))))]
     (str "#/"
          base
          opts)))

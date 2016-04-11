@@ -100,4 +100,7 @@
   (let [static {:owner owner}
         frequency (or frequency 15000)
         executor (or executor (create-thread-executor 1))]
-    (map->KafkaStatus {:owner owner :topic topic :register (partial executor frequency) :status generate-status})))
+    (map->KafkaStatus {:owner owner
+                       :topic topic
+                       :register (partial executor frequency)
+                       :status generate-status})))
