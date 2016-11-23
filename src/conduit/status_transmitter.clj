@@ -59,7 +59,7 @@
                                           f ms ms TimeUnit/MILLISECONDS)]
         #(.cancel task true)))))
 
-(defrecord KafkaStatus [owner topic register status]
+(defrecord KafkaStatus [owner topic register status kafka-opts]
   component/Lifecycle
   (start [component]
     (util/start
@@ -75,7 +75,8 @@
                config (merge
                        {:zk-port 2181
                         :kafka-port 9092}
-                       config)
+                       config
+                       kafka-opts)
                connect-string (or (:kafka-connect config)
                                   (str (:zk-host config) \:
                                        (:kafka-port config)))

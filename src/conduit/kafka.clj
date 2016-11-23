@@ -49,16 +49,16 @@
 (defn make-consumer
   [opts]
   (consumer/consumer
-   (merge
-    {"zookeeper.connect" (:host opts)
-     "group.id" (:group opts)
-     "auto.offset.reset" "largest"
-     "auto.commit.interval.ms" "200"
-     "auto.commit.enable" "true"}
-    (reduce-kv (fn [m k v]
-                 (when (string? k) (assoc m k v)))
-               {}
-               opts))))
+   (reduce-kv (fn [m k v]
+                (if (string? k)
+                  (assoc m k v)
+                  m))
+              {"zookeeper.connect" (:host opts)
+               "group.id" (:group opts)
+               "auto.offset.reset" "largest"
+               "auto.commit.interval.ms" "200"
+               "auto.commit.enable" "true"}
+              opts)))
 
 (defn zk-topic-source
   [consumer topic]
