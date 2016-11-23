@@ -55,7 +55,8 @@
   (let [executor (ScheduledThreadPoolExecutor. size)]
     (fn schedule-task
       [ms f]
-      (let [task (.scheduleWithFixedDelay executor f ms ms TimeUnit/MILLISECONDS)]
+      (let [task (.scheduleWithFixedDelay executor
+                                          f ms ms TimeUnit/MILLISECONDS)]
         #(.cancel task true)))))
 
 (defrecord KafkaStatus [owner topic register status]
@@ -67,25 +68,36 @@
      owner
      (fn []
        (try
-         (assert (-> component :config :config :kafka :zk-host) "must specify host")
+         (assert (or (get-in component [:config :config :kafka :kafka-connect])
+                     (get-in component [:config :config :kafka :zk-host]))
+                 "must specify host")
          (let [config (-> component :config :config :kafka)
                config (merge
                        {:zk-port 2181
                         :kafka-port 9092}
                        config)
-               producer (kafka/make-producer (str (:zk-host config) \:
-                                                  (:kafka-port config))
-                                             (:producer-opts config))
+               connect-string (or (:kafka-connect config)
+                                  (str (:zk-host config) \:
+                                       (:kafka-port config)))
+               producer (kafka/make-producer connect-string
+                                             (or (:producer-opts config)
+                                                 {}))
                transmitter (kafka/encoded-transmitter producer {})
-               process-handle (register (fn kafka-status-logger
-                                          []
-                                          (try
-                                            (transmitter topic (status))
-                                            (catch Exception e
-                                              (println "error in status logger" (str e))))))]
+               process-handle (register
+                               (fn kafka-status-logger
+                                 []
+                                 (try
+                                  (transmitter topic (status))
+                                  (catch Exception e
+                                    (println "error in status logger"
+                                             (pr-str e))))))]
            (assoc component :stop process-handle))
-         (catch Exception e (println "error starting kafka status logger" e)
-                (throw e))))))
+         (catch AssertionError e
+           (println "error starting kafka status logger" e)
+           (throw e))
+         (catch Exception e
+           (println "error starting kafka status logger" e)
+           (throw e))))))
   (stop [component]
     (util/stop
      component
@@ -96,10 +108,15 @@
        (dissoc component :stop)))))
 
 (defn new-kafka-status
-  [{:keys [frequency owner topic executor] :as opts}]
+  [{:keys [frequency owner topic executor custom-status] :as opts}]
   (let [static {:owner owner}
-        frequency (or frequency 15000)
-        executor (or executor (create-thread-executor 1))]
+        frequency (or frequency
+                      15000)
+        executor (or executor
+                     (create-thread-executor 1))
+        custom-status (or custom-status
+                          (constantly nil))
+        gen-status #(generate-status (merge static (custom-status)))]
     (map->KafkaStatus {:owner owner
                        :topic topic
                        :register (partial executor frequency)
