@@ -118,7 +118,8 @@
         custom-status (or custom-status
                           (constantly nil))
         gen-status #(generate-status (merge static (custom-status %)))]
-    (map->KafkaStatus {:owner owner
-                       :topic topic
-                       :register (partial executor frequency)
-                       :status gen-status})))
+    (map->KafkaStatus (assoc opts
+                             :owner owner
+                             :topic topic
+                             :register (partial executor frequency)
+                             :status gen-status))))
