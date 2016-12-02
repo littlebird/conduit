@@ -44,7 +44,7 @@
   [baos decoders]
   (let [bytes-in (ByteArrayInputStream. baos)
         reader (transit/reader bytes-in :json decoders)]
-     (transit/read reader)))
+    (transit/read reader)))
 
 (defn make-consumer
   [opts]

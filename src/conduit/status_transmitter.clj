@@ -26,12 +26,12 @@
 (defn get-memory-usage
   []
   (let [runtime (Runtime/getRuntime)
-         unused (.freeMemory runtime)
-         limit (.maxMemory runtime)
-         allocated (.totalMemory (Runtime/getRuntime))
-         used (- allocated unused)
-         breathing-room (- limit used)
-         summary (str (int (* 100 (/ (double used) limit))) \%)]
+        unused (.freeMemory runtime)
+        limit (.maxMemory runtime)
+        allocated (.totalMemory (Runtime/getRuntime))
+        used (- allocated unused)
+        breathing-room (- limit used)
+        summary (str (int (* 100 (/ (double used) limit))) \%)]
     {:summary summary
      :unused unused
      :limit limit
@@ -88,10 +88,10 @@
                                (fn kafka-status-logger
                                  []
                                  (try
-                                  (transmitter topic (status))
-                                  (catch Exception e
-                                    (println "error in status logger"
-                                             (pr-str e))))))]
+                                   (transmitter topic (status component))
+                                   (catch Exception e
+                                     (println "error in status logger"
+                                              (pr-str e))))))]
            (assoc component :stop process-handle))
          (catch AssertionError e
            (println "error starting kafka status logger" e)
@@ -117,8 +117,8 @@
                      (create-thread-executor 1))
         custom-status (or custom-status
                           (constantly nil))
-        gen-status #(generate-status (merge static (custom-status)))]
+        gen-status #(generate-status (merge static (custom-status %)))]
     (map->KafkaStatus {:owner owner
                        :topic topic
                        :register (partial executor frequency)
-                       :status generate-status})))
+                       :status gen-status})))
