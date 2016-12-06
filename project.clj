@@ -8,5 +8,6 @@
                  [org.clojure/data.codec "0.1.0"]
                  [prismatic/schema "0.4.3"]
                  [clj-kafka "0.3.1"]
+                 [ch.qos.logback/logback-classic "1.1.7"]
                  [com.taoensso/sente "1.4.1"]
                  [com.cognitect/transit-clj "0.8.275"]])
