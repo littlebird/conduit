@@ -108,6 +108,24 @@
        ((:stop component))
        (dissoc component :stop)))))
 
+(defn gen-custom
+  [state-store]
+  (fn gen-custom-stats [_]
+    (let [next-state (volatile! nil)]
+      (swap! state-store
+             (fn [updated]
+               (vreset! next-state updated)
+               {}))
+      {:metrics @next-state})))
+
+(defn tracking-middleware
+  [handler get-state key-sequence]
+  (fn stat-updater
+    [& args]
+    (let [state (get-state args)]
+      (swap! state update key-sequence (fnil inc 0)))
+    (apply handler args)))
+
 (defn new-kafka-status
   [{:keys [frequency owner topic executor custom-status] :as opts}]
   (let [static {:owner owner}
@@ -115,11 +133,13 @@
                       15000)
         executor (or executor
                      (create-thread-executor 1))
+        state (atom {})
         custom-status (or custom-status
-                          (constantly nil))
+                          (gen-custom state))
         gen-status #(generate-status (merge static (custom-status %)))]
     (map->KafkaStatus (assoc opts
                              :owner owner
                              :topic topic
                              :register (partial executor frequency)
+                             :state state
                              :status gen-status))))
