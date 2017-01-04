@@ -45,7 +45,7 @@
    (merge
     {:memory (get-memory-usage)
      :cpu (get-cpu)
-     :stacks (get-all-stacks)
+     ;:stacks (get-all-stacks) ;; add this back in when you want to send stack traces 
      :time (Date.)
      :host (str (InetAddress/getLocalHost))}
     static)))
