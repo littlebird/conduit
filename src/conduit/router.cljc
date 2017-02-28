@@ -11,7 +11,6 @@
                  [conduit.tools.async :as socket-async]
                  [clojure.core.async :as >])]))
 
-
 (defn socket-loop
   [conduit provided shutdown dispatch]
   {:pre [shutdown]} ; shutdown should exist
