@@ -34,11 +34,24 @@
     (let [{:keys [routing contents transmit] :as message} (conduit/parse conduit msg)
           unhandled (partial conduit/unhandled conduit)
           handler (get routes routing unhandled)
-          provided (assoc provided :transmit transmit :routing routing :message msg)
+          provided (assoc provided
+                          :transmit transmit
+                          :routing routing
+                          :message msg)
           readable #?(:clj
                       pr-str
                       :cljs
-                      str)]
+                      str)
+          log-error-here (fn [e]
+                           (tools/error-msg
+                            (str (conduit/identifier conduit)
+                                 " socket-loop uncaught exception"
+                                 (readable {:routing routing
+                                            :contents contents})
+                                 \newline
+                                 (readable message)
+                                 \newline
+                                 (readable e))))]
       (when (conduit/verbose? conduit)
         (tools/debug-msg (str (conduit/identifier conduit)
                               " routing from " routing " with handler " handler
@@ -51,19 +64,20 @@
             do)
          (try (handler contents provided)
               (catch
-                  #?(:clj
-                     Exception
-                     :cljs
-                     js/Object)
+                #?(:clj
+                   Exception
+                   :cljs
+                   js/Object)
                 e
-                (tools/error-msg (str (conduit/identifier conduit)
-                                      " socket-loop uncaught exception"
-                                      (readable {:routing routing
-                                                 :contents contents})
-                                      \newline
-                                      (readable message)
-                                      \newline
-                                      (readable e))))))))))
+                (log-error-here e))
+              (catch
+                #?(:clj
+                   Throwable
+                   :cljs
+                   js/Error)
+                t
+                (log-error-here t)
+                (throw t))))))))
 
 (defn run-router
   [provided shutdown & [parallelism]]
