@@ -25,7 +25,7 @@
                                  (>/go
                                    (>/<! signal)
                                    (f))))
-             provided (-> component :provided :provided)
+             provided (get-in component [:provided :provided])
              impl (constructor component)]
          (router/run-router (assoc provided
                                    :routes (get-in component routes-lookup)
@@ -44,7 +44,7 @@
      :conduit
      owner
      (fn []
-       (>/go (some-> component :shutdown (>/>! :done)))
+       (some-> component :shutdown (>/put! :done))
        (dissoc component :conduit :after-handshake :shutdown)))))
 
 (defn new-conduit

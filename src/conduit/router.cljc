@@ -11,21 +11,49 @@
                  [conduit.tools.async :as socket-async]
                  [clojure.core.async :as >])]))
 
+(defn log-error-here
+  [conduit data e]
+  (tools/error-msg
+   (str (conduit/identifier conduit)
+        " socket-loop uncaught exception"
+        (pr-str data)
+        \newline
+        (pr-str e))))
+
 (defn socket-loop
   [conduit provided shutdown dispatch]
-  {:pre [shutdown]} ; shutdown should exist
-  (>/go
-    (loop []
-      (let [socket (conduit/receiver conduit)
-            _ (assert socket)
-            [message from] (>/alts! [shutdown
-                                     (conduit/receiver conduit)])]
-        (if (or (not message)
-                (= from shutdown))
-          (tools/debug-msg (str (conduit/identifier conduit)
-                                " conduit socket-loop shutting down"))
-          (do (dispatch message provided)
-              (recur)))))))
+  {:pre [shutdown]}
+  (let [done (delay :OK)]
+    (>/go
+     (loop []
+       (let [messagep (volatile! ::unset)]
+         (try
+          (let [socket (conduit/receiver conduit)
+                [message from] (>/alts! [shutdown
+                                         (conduit/receiver conduit)])]
+            (vreset! messagep message)
+            (if (or (not message)
+                    (= from shutdown))
+              (force done)
+              #?(:clj
+                 (>/<! (>/thread (dispatch message provided)))
+                 :cljs
+                 (dispatch message provided))))
+          (catch #?(:clj Exception :cljs js/Object)
+            e
+            (log-error-here
+             conduit
+             {:message @messagep}))
+          (catch #?(:clj Throwable :cljs js/Error)
+            t
+            (log-error-here
+             conduit
+             {:message @messagep})
+            (throw t))))
+       (if (realized? done)
+         (tools/debug-msg (str (conduit/identifier conduit)
+                               " conduit socket-loop shutting down"))
+         (recur))))))
 
 (defn dispatcher
   [conduit routes]
@@ -37,53 +65,31 @@
           provided (assoc provided
                           :transmit transmit
                           :routing routing
-                          :message msg)
-          readable #?(:clj
-                      pr-str
-                      :cljs
-                      str)
-          log-error-here (fn [e]
-                           (tools/error-msg
-                            (str (conduit/identifier conduit)
-                                 " socket-loop uncaught exception"
-                                 (readable {:routing routing
-                                            :contents contents})
-                                 \newline
-                                 (readable message)
-                                 \newline
-                                 (readable e))))]
+                          :message msg)]
       (when (conduit/verbose? conduit)
         (tools/debug-msg (str (conduit/identifier conduit)
                               " routing from " routing " with handler " handler
                               (when (= handler unhandled) ", unhandled"))))
       (if (socket-async/out-channel? handler)
-        (>/go (>/>! handler [contents provided]))
-        (#?(:clj
-            future
-            :cljs
-            do)
-         (try (handler contents provided)
-              (catch
-                #?(:clj
-                   Exception
-                   :cljs
-                   js/Object)
-                e
-                (log-error-here e))
-              (catch
-                #?(:clj
-                   Throwable
-                   :cljs
-                   js/Error)
-                t
-                (log-error-here t)
-                (throw t))))))))
+        (>/put! handler [contents provided])
+        (try (handler contents provided)
+             (catch #?(:clj Exception :cljs js/Object)
+               e
+               (log-error-here {:routing routing
+                                :contents contents}
+                               e))
+             (catch #?(:clj Throwable :cljs js/Error)
+               t
+               (log-error-here {:routing routing
+                                :contents contents}
+                               t)
+               (throw t)))))))
 
 (defn run-router
-  [provided shutdown & [parallelism]]
+  [provided shutdown parallelism]
   {:pre [(:impl provided)
          (:routes provided)]}
-  (dotimes [i (or parallelism 1)]
+  (dotimes [i parallelism]
     (socket-loop (:impl provided)
                  (dissoc provided :routes :impl)
                  (>/tap shutdown (>/chan))
