@@ -43,12 +43,14 @@
             e
             (log-error-here
              conduit
-             {:message @messagep}))
+             {:message @messagep}
+             e))
           (catch #?(:clj Throwable :cljs js/Error)
             t
             (log-error-here
              conduit
-             {:message @messagep})
+             {:message @messagep}
+             t)
             (throw t))))
        (if (realized? done)
          (tools/debug-msg (str (conduit/identifier conduit)
@@ -75,12 +77,14 @@
         (try (handler contents provided)
              (catch #?(:clj Exception :cljs js/Object)
                e
-               (log-error-here {:routing routing
+               (log-error-here conduit
+                               {:routing routing
                                 :contents contents}
                                e))
              (catch #?(:clj Throwable :cljs js/Error)
                t
-               (log-error-here {:routing routing
+               (log-error-here conduit
+                               {:routing routing
                                 :contents contents}
                                t)
                (throw t)))))))
