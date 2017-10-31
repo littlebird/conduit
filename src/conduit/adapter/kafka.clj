@@ -106,12 +106,14 @@
     (future
       (loop [msg (get-next-message)]
         (try
+         ;; (when msg ...)
           (let [payload (decode msg)
                 to (:to (second payload))]
             (when (and payload
                        (or (not to)
                            (= to my-id)))
               (>/>!! result payload))
+            ;; TODO - we can flip this above the read
             (when request-chan
               ;; if supplied, request-chan allows "pull" of messages - you can let
               ;; other peers in your group take a message by not putting messages onto this
