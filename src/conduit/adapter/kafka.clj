@@ -44,18 +44,24 @@
      owner
      (fn []
        (try
-         (assert (-> component :config :config :kafka :zk-connect) "must specify zookeeper")
-         (assert (-> component :config :config :kafka :kafka-connect) "must specify kafka")
+         (assert (get-in component [:config :config :kafka :zk-connect])
+                 "must specify zookeeper")
+         (assert (get-in component [:config :config :kafka :kafka-connect])
+                 "must specify kafka")
          (let [config (-> component :config :config :kafka)
                producer (kafka/make-producer (:kafka-connect config)
                                              (:producer-opts config))
                id (:id config (UUID/randomUUID))
-               zk-consumer (kafka/make-consumer (assoc (:consumer-opts config)
-                                                       :host (:zk-connect config)
-                                                       :group (str group-prefix id)))
+               consumer-opts (assoc (:consumer-opts config)
+                                    :host (:zk-connect config)
+                                    :group (str group-prefix id))
+               zk-consumer (kafka/make-consumer consumer-opts)
                topic-transmitter (fn topic-transmitter
                                    [topic]
-                                   (make-routing-transmitter id producer topic encoders))
+                                   (make-routing-transmitter id
+                                                             producer
+                                                             topic
+                                                             encoders))
                brokers #(zk/brokers {"zookeeper.connect" (:zk-connect config)})]
            (assoc component
                   :kafka-peer :started
@@ -84,13 +90,15 @@
                :brokers)))))
 
 (defn new-kafka-peer
-  [{:keys [owner encoders decoders socket-router group-prefix zk-host] :as config}]
+  [{:keys [owner encoders decoders socket-router group-prefix zk-host]
+    :as config}]
   (map->KafkaPeer config))
 
 (defn routing-decoder
   [decoders]
   (fn [msg]
-    (let [[to routing sender message :as inflated] (kafka/decode-transit-baos msg decoders)]
+    (let [inflated (kafka/decode-transit-baos msg decoders)
+          [to routing sender message] inflated]
       [routing {:data message
                 :sender sender
                 :routing routing
@@ -101,7 +109,6 @@
   (let [decode (routing-decoder decoders)
         stream (consumer/create-message-stream consumer topic)
         it (.iterator stream)
-        get-next-message #(.message (.next it))
         result (>/chan)]
     (future
       (try
@@ -124,14 +131,10 @@
     result))
 
 (defn new-kafka-conduit
-  [{{:keys [id topic-transmitter producer zk-consumer brokers encoders decoders] :as impl} :impl
-    request-chan :request-chan
-    group :group
-    topic :topic
-    send-topic :send-topic
-    verbose :verbose
-    unhandled :unhandled}]
-  (let [my-id (or id (UUID/randomUUID))
+  [{:keys [request-chan group topic send-topic verbose unhandled impl]}]
+  (let [{:keys [id topic-transmitter producer zk-consumer brokers]} impl
+        {:keys [encoders decoders]} impl
+        my-id (or id (UUID/randomUUID))
         zk-receiver (make-zk-routing-receiver {:my-id my-id
                                                :consumer zk-consumer
                                                :group group
