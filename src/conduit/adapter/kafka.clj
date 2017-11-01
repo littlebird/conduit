@@ -109,25 +109,27 @@
   (let [decode (routing-decoder decoders)
         stream (consumer/create-message-stream consumer topic)
         it (.iterator stream)
-        result (>/chan)]
+        result (>/chan)
+        wait-for-capacity (if request-chan
+                            #(>/<!! request-chan)
+                            (constantly true))]
     (future
       (try
-        (loop []
-          (let [wait (delay (if request-chan
-                              (>/<!! request-chan)
-                              true))
-                msg (delay (.message (.next it)))
-                payload (delay (decode @msg))
-                to (delay (:to (second @payload)))
-                send-result (delay (when (or (not @to)
-                                             (= @to my-id))
-                                     (>/>!! result @payload))
-                                   true)]
-            (and @wait
-                 @msg
-                 @payload
-                 @send-result
-                 (recur))))
+        (loop [_ nil]
+          (letfn [(get-message-from-stream [_] (.message (.next it)))
+                  (get-message-payload [msg] (decode msg))
+                  (maybe-send-result [payload]
+                                     (let [to (:to (second payload))]
+                                       (if (or (not to)
+                                               (= to my-id))
+                                         (>/>!! result payload)
+                                         :message-not-for-me)))]
+            (some->
+             (wait-for-capacity)
+             (get-message-from-stream)
+             (get-message-payload)
+             (maybe-send-result)
+             (recur))))
         (catch Exception e
           (println "Error in kafka conduit zk-receiver" (pr-str e)))))
     result))
