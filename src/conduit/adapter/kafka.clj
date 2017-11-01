@@ -105,6 +105,10 @@
                 :to to}])))
 
 (defn make-zk-routing-receiver
+  "returns a channel which will receive each message that the client should act
+   on, if the request-chan arg is supplied, the receiver will wait until it
+   gets a ready message (the content of which is ignored) before getting each
+   item from the network (this lets us pull instead of them pushing)"
   [{:keys [my-id consumer group topic decoders request-chan]}]
   (let [decode (routing-decoder decoders)
         stream (consumer/create-message-stream consumer topic)
@@ -112,27 +116,69 @@
         result (>/chan)
         wait-for-capacity (if request-chan
                             #(>/<!! request-chan)
-                            (constantly true))]
-    (future
-      (try
-        (loop [_ nil]
-          (letfn [(get-message-from-stream [_] (.message (.next it)))
-                  (get-message-payload [msg] (decode msg))
-                  (maybe-send-result [payload]
-                                     (let [to (:to (second payload))]
-                                       (if (or (not to)
-                                               (= to my-id))
-                                         (>/>!! result payload)
-                                         :message-not-for-me)))]
-            (some->
-             (wait-for-capacity)
-             (get-message-from-stream)
-             (get-message-payload)
-             (maybe-send-result)
-             (recur))))
-        (catch Exception e
-          (println "Error in kafka conduit zk-receiver" (pr-str e)))))
+                            (constantly true))
+        get-message-from-stream (fn get-message-from-stream [_]
+                                  (.message (.next it)))]
+    (future-call
+     (fn zk-routing-receiver []
+       (when-some [[_ {:keys [to]} :as next-input]
+                   (try (some-> (wait-for-capacity)
+                                (get-message-from-stream)
+                                (decode))
+                        (catch Exception e
+                          (println ::zk-routing-receiver (pr-str e))
+                          nil))]
+         (let [for-me (or (not to)
+                          (= to my-id))
+               done? (when for-me
+                       (not (>/>!! result next-input)))]
+           (when-not done?
+             (recur))))))
     result))
+
+(defn make-async-routing-receiver
+  "like make-zk-routing-receiver but instead of just blocking until it gets
+   a ready message, it expects a message containing a channel onto which to
+   put its result on each loop"
+  [{:keys [my-id consumer group topic decoders request-chan]}]
+  {:pre [request-chan]}
+  (let [decode (routing-decoder decoders)
+        stream (consumer/create-message-stream consumer topic)
+        it (.iterator stream)]
+    (letfn [(get-message-from-stream [result-chan]
+              (when-let [message (.message (.next it))]
+                {:message message
+                 :result-chan result-chan}))
+            (get-message-payload [{:keys [message] :as context}]
+                                 (assoc context :payload (decode message)))
+            (check-ignore [{:keys [payload] :as context}]
+                          (let [[_  {:keys [to]}] payload]
+                            (assoc context :ignore? (and to
+                                                         (not= my-id to)))))
+            (maybe-send-result [{:keys [payload result-chan ignore?]}]
+                               (if ignore?
+                                 result-chan
+                                 (and (>/>!! result-chan payload)
+                                      false)))]
+      (future-call
+       (fn async-routing-receiver
+         ([] (async-routing-receiver false))
+         ([send-chan]
+           ;; if target-chan is false, we get a new one, otherwise reuse it
+          (let [target-chan (or send-chan
+                                (>/<!! request-chan))
+                maybe-sent (try (some-> target-chan
+                                        (get-message-from-stream)
+                                        (get-message-payload)
+                                        (check-ignore)
+                                        (maybe-send-result))
+                                (catch Exception e
+                                  (println ::async-routing-receiver (pr-str e))
+                                  nil))]
+             ;; if nothing in maybe-sent returned nil,
+             ;; recur with the next channel to use
+            (some-> maybe-sent
+                    (recur)))))))))
 
 (defn new-kafka-conduit
   [{:keys [request-chan group topic send-topic verbose unhandled impl]}]
