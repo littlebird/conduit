@@ -118,13 +118,15 @@
                               true))
                 msg (delay (.message (.next it)))
                 payload (delay (decode @msg))
-                to (delay (:to (second @payload)))]
+                to (delay (:to (second @payload)))
+                send-result (delay (when (or (not @to)
+                                             (= @to my-id))
+                                     (>/>!! result @payload))
+                                   true)]
             (and @wait
                  @msg
                  @payload
-                 (or (not @to)
-                     (= @to my-id))
-                 (>/>!! result @payload)
+                 @send-result
                  (recur))))
         (catch Exception e
           (println "Error in kafka conduit zk-receiver" (pr-str e)))))
