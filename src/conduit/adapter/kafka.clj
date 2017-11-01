@@ -109,21 +109,16 @@
    on, if the request-chan arg is supplied, the receiver will wait until it
    gets a ready message (the content of which is ignored) before getting each
    item from the network (this lets us pull instead of them pushing)"
-  [{:keys [my-id consumer group topic decoders request-chan]}]
+  [{:keys [my-id consumer group topic decoders]}]
   (let [decode (routing-decoder decoders)
         stream (consumer/create-message-stream consumer topic)
         it (.iterator stream)
-        result (>/chan)
-        wait-for-capacity (if request-chan
-                            #(>/<!! request-chan)
-                            (constantly true))
-        get-message-from-stream (fn get-message-from-stream [_]
-                                  (.message (.next it)))]
+        result (>/chan)]
     (future-call
      (fn zk-routing-receiver []
        (when-some [[_ {:keys [to]} :as next-input]
-                   (try (some-> (wait-for-capacity)
-                                (get-message-from-stream)
+                   (try (some-> (.next it)
+                                (.message)
                                 (decode))
                         (catch Exception e
                           (println ::zk-routing-receiver (pr-str e))
