@@ -104,29 +104,23 @@
         get-next-message #(.message (.next it))
         result (>/chan)]
     (future
-      (loop [msg (get-next-message)]
-        (try
-         ;; (when msg ...)
-          (let [payload (decode msg)
-                to (:to (second payload))]
-            (when (and payload
-                       (or (not to)
-                           (= to my-id)))
-              (>/>!! result payload))
-            ;; TODO - we can flip this above the read
-            (when request-chan
-              ;; if supplied, request-chan allows "pull" of messages - you can let
-              ;; other peers in your group take a message by not putting messages onto this
-              ;; channel
-              (println "Kafka Conduit in group" group
-                       "waiting before grabbing a job from topic" topic
-                       "as requested.")
-              (>/<!! request-chan)
-              (println "Kafka Conduit in group" group
-                       "grabbing a job from topic" (str topic "."))))
-          (catch Exception e
-            (println "Error in kafka conduit zk-receiver" (pr-str e))))
-        (recur (get-next-message))))
+      (try
+        (loop []
+          (let [wait (delay (if request-chan
+                              (>/<!! request-chan)
+                              true))
+                msg (delay (.message (.next it)))
+                payload (delay (decode @msg))
+                to (delay (:to (second @payload)))]
+            (and @wait
+                 @msg
+                 @payload
+                 (or (not @to)
+                     (= @to my-id))
+                 (>/>!! result @payload)
+                 (recur))))
+        (catch Exception e
+          (println "Error in kafka conduit zk-receiver" (pr-str e)))))
     result))
 
 (defn new-kafka-conduit
