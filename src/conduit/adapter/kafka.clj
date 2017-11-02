@@ -17,7 +17,7 @@
       (let [data [to route my-id message]]
         (encoded-transmit topic data)))))
 
-(defrecord KafkaConduit [transmitter receiver
+(defrecord KafkaConduit [transmitter receiver-fn
                          verbose unhandled
                          id]
   conduit/Conduit
@@ -26,7 +26,7 @@
   (verbose? [this]
     (some-> verbose deref))
   (receiver [this]
-    receiver)
+    (receiver-fn))
   (parse [this [routing contents]]
     ;; get the routing, contents, response function from the message / instance
     {:routing routing
@@ -104,20 +104,29 @@
                 :routing routing
                 :to to}])))
 
+(defn construct-kafka-client
+  [{:keys [consumer topic decoders]}]
+  (let [decode (routing-decoder decoders)
+        stream (consumer/create-message-stream consumer topic)
+        message-iterator (.iterator stream)]
+    {:decode decode
+     :stream stream
+     :message-iterator message-iterator}))
+
 (defn make-zk-routing-receiver
   "returns a channel which will receive each message that the client should act
    on, if the request-chan arg is supplied, the receiver will wait until it
    gets a ready message (the content of which is ignored) before getting each
    item from the network (this lets us pull instead of them pushing)"
-  [{:keys [my-id consumer group topic decoders]}]
-  (let [decode (routing-decoder decoders)
-        stream (consumer/create-message-stream consumer topic)
-        it (.iterator stream)
+  [opts]
+  (let [{:keys [my-id consumer group topic decoders get-client]} opts
+        construct-client (or get-client construct-kafka-client)
+        {:keys [decode message-iterator]} (construct-client opts)
         result (>/chan)]
     (future-call
      (fn zk-routing-receiver []
        (when-some [[_ {:keys [to]} :as next-input]
-                   (try (some-> (.next it)
+                   (try (some-> (.next message-iterator)
                                 (.message)
                                 (decode))
                         (catch Exception e
@@ -129,19 +138,19 @@
                        (not (>/>!! result next-input)))]
            (when-not done?
              (recur))))))
-    result))
+    (constantly  result)))
 
 (defn make-async-routing-receiver
   "like make-zk-routing-receiver but instead of just blocking until it gets
    a ready message, it expects a message containing a channel onto which to
    put its result on each loop"
-  [{:keys [my-id consumer group topic decoders request-chan]}]
-  {:pre [request-chan]}
-  (let [decode (routing-decoder decoders)
-        stream (consumer/create-message-stream consumer topic)
-        it (.iterator stream)]
+  [opts]
+  {:pre [(:request-chan opts)]}
+  (let [{:keys [my-id consumer group topic decoders request-chan get-client]} opts
+        construct-client (or get-client construct-kafka-client)
+        {:keys [decode message-iterator]} (construct-client opts)]
     (letfn [(get-message-from-stream [result-chan]
-              (when-let [message (.message (.next it))]
+              (when-let [message (.message (.next message-iterator))]
                 {:message message
                  :result-chan result-chan}))
             (get-message-payload [{:keys [message] :as context}]
@@ -173,22 +182,29 @@
              ;; if nothing in maybe-sent returned nil,
              ;; recur with the next channel to use
             (some-> maybe-sent
-                    (recur)))))))))
+                    (recur)))))))
+    (fn []
+      (let [res-chan (>/chan)]
+        (>/>!! request-chan res-chan)
+        res-chan))))
 
 (defn new-kafka-conduit
   [{:keys [request-chan group topic send-topic verbose unhandled impl]}]
   (let [{:keys [id topic-transmitter producer zk-consumer brokers]} impl
         {:keys [encoders decoders]} impl
         my-id (or id (UUID/randomUUID))
-        zk-receiver (make-zk-routing-receiver {:my-id my-id
-                                               :consumer zk-consumer
-                                               :group group
-                                               :topic topic
-                                               :decoders decoders
-                                               :request-chan request-chan})
+        receiver-args {:my-id my-id
+                       :consumer zk-consumer
+                       :group group
+                       :topic topic
+                       :decoders decoders
+                       :request-chan request-chan}
+        zk-receiver-fn (if request-chan
+                         (make-async-routing-receiver receiver-args)
+                         (make-zk-routing-receiver receiver-args))
         send-topic (or send-topic topic)]
     (map->KafkaConduit {:transmitter (topic-transmitter send-topic)
-                        :receiver zk-receiver
+                        :receiver-fn zk-receiver-fn
                         :verbose verbose
                         :unhandled unhandled
                         :id my-id})))
