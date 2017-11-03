@@ -29,8 +29,7 @@
        (let [messagep (volatile! ::unset)]
          (try
           (let [socket (conduit/receiver conduit)
-                [message from] (>/alts! [shutdown
-                                         (conduit/receiver conduit)])]
+                [message from] (>/alts! [shutdown socket])]
             (vreset! messagep message)
             (if (or (not message)
                     (= from shutdown))
