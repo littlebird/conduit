@@ -1,5 +1,6 @@
 (ns conduit.status-transmitter
-  (:require [conduit.kafka :as kafka]
+  (:require [taoensso.timbre :as timbre]
+            [conduit.kafka :as kafka]
             [noisesmith.component :as component]
             [conduit.tools.component-util :as util])
   (:import (java.util.concurrent ScheduledThreadPoolExecutor TimeUnit)
@@ -90,14 +91,14 @@
                                  (try
                                    (transmitter topic (status component))
                                    (catch Exception e
-                                     (println "error in status logger"
-                                              (pr-str e))))))]
+                                     (timbre/error ::kafka-status-logger
+                                                   (pr-str e))))))]
            (assoc component :stop process-handle))
          (catch AssertionError e
-           (println "error starting kafka status logger" e)
+           (timbre/error ::KafkaStatus$start (pr-str e))
            (throw e))
          (catch Exception e
-           (println "error starting kafka status logger" e)
+           (timbre/error ::KafkaStatus$start (pr-str e))
            (throw e))))))
   (stop [component]
     (util/stop

@@ -1,6 +1,7 @@
 (ns conduit.adapter.kafka
   (:require [clj-kafka.zk :as zk]
             [clj-kafka.consumer.zk :as consumer]
+            [taoensso.timbre :as timbre]
             [conduit.kafka :as kafka]
             [conduit.protocol :as conduit]
             [conduit.tools :as tools]
@@ -26,7 +27,10 @@
   (verbose? [this]
     (some-> verbose deref))
   (receiver [this]
-    (receiver-fn))
+    (timbre/trace ::KafkaConduit$receiver "ready to receive")
+    (let [received (receiver-fn)]
+      (timbre/trace ::KafkaConduit$receiver "recieved" (pr-str received))
+      received))
   (parse [this [routing contents]]
     ;; get the routing, contents, response function from the message / instance
     {:routing routing
@@ -73,7 +77,8 @@
                   :brokers brokers
                   :producer producer
                   :zk-consumer zk-consumer))
-         (catch Exception e (println "error starting kafka peer" e)
+         (catch Exception e (timbre/error ::KafkaPeer$start
+                                          "error starting kafka peer" e)
                 (throw e))))))
   (stop [component]
     (util/stop
@@ -130,7 +135,7 @@
                                 (.message)
                                 (decode))
                         (catch Exception e
-                          (println ::zk-routing-receiver (pr-str e))
+                          (timbre/error ::zk-routing-receiver (pr-str e))
                           nil))]
          (let [for-me (or (not to)
                           (= to my-id))
@@ -177,7 +182,7 @@
                                         (check-ignore)
                                         (maybe-send-result))
                                 (catch Exception e
-                                  (println ::async-routing-receiver (pr-str e))
+                                  (timbre/error ::async-routing-receiver (pr-str e))
                                   nil))]
              ;; if nothing in maybe-sent returned nil,
              ;; recur with the next channel to use
