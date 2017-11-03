@@ -167,7 +167,7 @@
             (maybe-send-result [{:keys [payload result-chan ignore?]}]
                                (if ignore?
                                  result-chan
-                                 (and (>/>!! result-chan payload)
+                                 (and (>/put! result-chan payload)
                                       false)))]
       (future-call
        (fn async-routing-receiver
@@ -190,7 +190,7 @@
                     (recur)))))))
     (fn []
       (let [res-chan (>/chan)]
-        (>/>!! request-chan res-chan)
+        (>/put! request-chan res-chan)
         res-chan))))
 
 (defn new-kafka-conduit
