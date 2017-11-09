@@ -27,9 +27,7 @@
   (verbose? [this]
     (some-> verbose deref))
   (receiver [this]
-    (timbre/trace ::KafkaConduit$receiver "ready to receive")
     (let [received (receiver-fn)]
-      (timbre/trace ::KafkaConduit$receiver "recieved" (pr-str received))
       received))
   (parse [this [routing contents]]
     ;; get the routing, contents, response function from the message / instance
@@ -145,6 +143,8 @@
              (recur))))))
     (constantly  result)))
 
+(def debug (atom []))
+
 (defn make-async-routing-receiver
   "like make-zk-routing-receiver but instead of just blocking until it gets
    a ready message, it expects a message containing a channel onto which to
@@ -158,24 +158,44 @@
               (when-let [message (.message (.next message-iterator))]
                 {:message message
                  :result-chan result-chan}))
-            (get-message-payload [{:keys [message] :as context}]
-                                 (assoc context :payload (decode message)))
-            (check-ignore [{:keys [payload] :as context}]
-                          (let [[_  {:keys [to]}] payload]
-                            (assoc context :ignore? (and to
-                                                         (not= my-id to)))))
-            (maybe-send-result [{:keys [payload result-chan ignore?]}]
-                               (if ignore?
-                                 result-chan
-                                 (and (>/put! result-chan payload)
-                                      false)))]
+            (get-message-payload
+             [{:keys [message] :as context}]
+             (assoc context :payload (decode message)))
+            (check-ignore
+             [{:keys [payload] :as context}]
+             (let [[_  {:keys [to]}] payload]
+               (assoc context :ignore? (and to
+                                            (not= my-id to)))))
+            (maybe-send-result
+             [{:keys [payload result-chan ignore?]}]
+             (swap! debug conj {:context ::maybe-send-result
+                                :payload payload
+                                :request-chan request-chan
+                                :result-chan result-chan})
+             (timbre/debug ::make-async-routing-receiver$maybe-send-result
+                           "checking out message"
+                           (pr-str {:ignore? ignore?
+                                    :payload payload}))
+             (if ignore?
+               result-chan
+               (do (timbre/debug ::make-asnc-routing-receiver$maybe-send-result
+                                 "handling message for chan" result-chan)
+                   (and (>/put! result-chan payload)
+                        nil))))]
       (future-call
        (fn async-routing-receiver
-         ([] (async-routing-receiver false))
+         ([]
+          (timbre/debug ::async-routing-receiver
+                        "making a receiver with no fixed send-chan")
+          (async-routing-receiver false))
          ([send-chan]
            ;; if target-chan is false, we get a new one, otherwise reuse it
+          (timbre/debug ::async-routing-receiver "getting next message")
           (let [target-chan (or send-chan
-                                (>/<!! request-chan))
+                                (and request-chan
+                                     (>/<!! request-chan)))
+                _ (timbre/debug ::async-routing-receiver "got a target chan"
+                                target-chan)
                 maybe-sent (try (some-> target-chan
                                         (get-message-from-stream)
                                         (get-message-payload)
@@ -186,10 +206,15 @@
                                   nil))]
              ;; if nothing in maybe-sent returned nil,
              ;; recur with the next channel to use
+            (timbre/debug ::async-routing-receiver "got a message."
+                          "ignore?" (boolean maybe-sent))
             (some-> maybe-sent
                     (recur)))))))
     (fn []
       (let [res-chan (>/chan)]
+        (swap! debug conj {:context ::async-routing-receiver
+                           :request-chan request-chan
+                           :res-chan res-chan})
         (>/put! request-chan res-chan)
         res-chan))))
 
