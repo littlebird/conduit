@@ -6,6 +6,7 @@
             [conduit.protocol :as conduit]
             [conduit.tools :as tools]
             [clojure.core.async :as >]
+            [conduit.adapter.async :as async]
             [noisesmith.component :as component]
             [conduit.tools.component-util :as util])
   (:import (java.util UUID)))
@@ -143,80 +144,25 @@
              (recur))))))
     (constantly  result)))
 
-(def debug (atom []))
+(defn get-message-from-stream
+  [message-iterator work-chan]
+  (when-let [message (.message (.next message-iterator))]
+    {:message message
+     :work-chan work-chan}))
 
 (defn make-async-routing-receiver
   "like make-zk-routing-receiver but instead of just blocking until it gets
    a ready message, it expects a message containing a channel onto which to
    put its result on each loop"
-  [opts]
-  {:pre [(:request-chan opts)]}
-  (let [{:keys [my-id consumer group topic decoders request-chan get-client]} opts
+  [{:keys [capacity-chan] :as opts}]
+  {:pre [capacity-chan]}
+  (let [{:keys [get-client]} opts
         construct-client (or get-client construct-kafka-client)
-        {:keys [decode message-iterator]} (construct-client opts)]
-    (letfn [(get-message-from-stream [result-chan]
-              (when-let [message (.message (.next message-iterator))]
-                {:message message
-                 :result-chan result-chan}))
-            (get-message-payload
-             [{:keys [message] :as context}]
-             (assoc context :payload (decode message)))
-            (check-ignore
-             [{:keys [payload] :as context}]
-             (let [[_  {:keys [to]}] payload]
-               (assoc context :ignore? (and to
-                                            (not= my-id to)))))
-            (maybe-send-result
-             [{:keys [payload result-chan ignore?]}]
-             (swap! debug conj {:context ::maybe-send-result
-                                :payload payload
-                                :request-chan request-chan
-                                :result-chan result-chan})
-             (timbre/debug ::make-async-routing-receiver$maybe-send-result
-                           "checking out message"
-                           (pr-str {:ignore? ignore?
-                                    :payload payload}))
-             (if ignore?
-               result-chan
-               (do (timbre/debug ::make-asnc-routing-receiver$maybe-send-result
-                                 "handling message for chan" result-chan)
-                   (and (>/put! result-chan payload)
-                        nil))))]
-      (future-call
-       (fn async-routing-receiver
-         ([]
-          (timbre/debug ::async-routing-receiver
-                        "making a receiver with no fixed send-chan")
-          (async-routing-receiver false))
-         ([send-chan]
-           ;; if target-chan is false, we get a new one, otherwise reuse it
-          (timbre/debug ::async-routing-receiver "getting next message")
-          (let [target-chan (or send-chan
-                                (and request-chan
-                                     (>/<!! request-chan)))
-                _ (timbre/debug ::async-routing-receiver "got a target chan"
-                                target-chan)
-                maybe-sent (try (some-> target-chan
-                                        (get-message-from-stream)
-                                        (get-message-payload)
-                                        (check-ignore)
-                                        (maybe-send-result))
-                                (catch Exception e
-                                  (timbre/error ::async-routing-receiver (pr-str e))
-                                  nil))]
-             ;; if nothing in maybe-sent returned nil,
-             ;; recur with the next channel to use
-            (timbre/debug ::async-routing-receiver "got a message."
-                          "ignore?" (boolean maybe-sent))
-            (some-> maybe-sent
-                    (recur)))))))
-    (fn []
-      (let [res-chan (>/chan)]
-        (swap! debug conj {:context ::async-routing-receiver
-                           :request-chan request-chan
-                           :res-chan res-chan})
-        (>/put! request-chan res-chan)
-        res-chan))))
+        {:keys [message-iterator] :as client} (construct-client opts)
+        facilities (assoc client
+                          :get-message-from-stream get-message-from-stream
+                          :message-iterator message-iterator)]
+    (async/make-routing-receiver opts facilities)))
 
 (defn new-kafka-conduit
   [{:keys [request-chan group topic send-topic verbose unhandled impl]}]
