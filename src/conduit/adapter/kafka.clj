@@ -118,10 +118,8 @@
      :message-iterator message-iterator}))
 
 (defn make-zk-routing-receiver
-  "returns a channel which will receive each message that the client should act
-   on, if the request-chan arg is supplied, the receiver will wait until it
-   gets a ready message (the content of which is ignored) before getting each
-   item from the network (this lets us pull instead of them pushing)"
+  "returns a function returning a channel which will receive a message that the
+   client should act on"
   [opts]
   (let [{:keys [my-id consumer group topic decoders get-client]} opts
         construct-client (or get-client construct-kafka-client)
@@ -174,7 +172,7 @@
                        :group group
                        :topic topic
                        :decoders decoders
-                       :request-chan request-chan}
+                       :capacity-chan request-chan}
         zk-receiver-fn (if request-chan
                          (make-async-routing-receiver receiver-args)
                          (make-zk-routing-receiver receiver-args))
