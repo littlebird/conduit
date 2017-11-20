@@ -2,18 +2,12 @@
   (:require [clojure.core.async :as >]
             [taoensso.timbre :as timbre]))
 
-(def debug (atom []))
-
 (defn get-message-payload
   [decode {:keys [message] :as context}]
   (assoc context :payload (decode message)))
 
 (defn maybe-send-result
   [capacity-chan {:keys [payload work-chan ignore?]}]
-  (swap! debug conj {:context ::maybe-send-result
-                     :payload payload
-                     :capacity-chan capacity-chan
-                     :work-chan work-chan})
   (timbre/debug ::make-async-routing-receiver$maybe-send-result
                 "checking out message"
                 (pr-str {:ignore? ignore?
@@ -63,10 +57,7 @@
                       "ignore?" (boolean maybe-sent))
         (some-> maybe-sent
                 (recur))))))
-  (fn []
+  (fn submit-to-router []
     (let [res-chan (>/chan)]
-      (swap! debug conj {:context ::async-routing-receiver
-                         :capacity-chan capacity-chan
-                         :res-chan res-chan})
       (>/put! capacity-chan res-chan)
       res-chan)))
