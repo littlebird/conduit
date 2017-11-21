@@ -16,8 +16,8 @@
     work-chan
     (do (timbre/debug ::make-asnc-routing-receiver$maybe-send-result
                       "handling message for chan" work-chan)
-        (and (>/put! work-chan payload)
-             nil))))
+        (>/put! work-chan payload)
+        false)))
 
 (defn check-ignore
   [my-id
@@ -25,6 +25,7 @@
     :as context}]
   (assoc context :ignore? (and to
                                (not= my-id to))))
+
 (defn make-routing-receiver
   [{:keys [capacity-chan my-id] :as opts}
    {:keys [decode get-message-from-stream message-iterator] :as facilities}]
