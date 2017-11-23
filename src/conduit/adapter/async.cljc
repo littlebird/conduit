@@ -2,14 +2,23 @@
   (:require [clojure.core.async :as >]
             [taoensso.timbre :as timbre]))
 
+;; TODO - this seems to be doing everything properly except
+;; for the part where it sends to the channel?
+(def debug (atom []))
+
 (defn get-message-payload
   [decode {:keys [message] :as context}]
+  (swap! debug conj {:step ::get-message-payload
+                     :context context})
   (assoc context :payload (decode message)))
 
 (defn maybe-send-result
   "returns work-chan if the message is not for us
    returns false if there was a message propagated"
-  [capacity-chan {:keys [payload work-chan ignore?]}]
+  [capacity-chan {:keys [payload work-chan ignore?] :as context}]
+  (swap! debug conj {:step ::maybe-send-result
+                     :capacity-chan capacity-chan
+                     :context context})
   (if ignore?
     work-chan
     (do (>/put! work-chan payload)
@@ -19,6 +28,8 @@
   [my-id
    {{:keys [to]} :payload
     :as context}]
+  (swap! debug conj {:step ::check-ignore
+                     :context context})
   (assoc context :ignore? (and to
                                (not= my-id to))))
 
@@ -42,6 +53,8 @@
                             (catch Exception e
                               (timbre/error ::async-routing-receiver (pr-str e))
                               nil))]
+        (swap! debug conj {:step ::async-routing-receiver
+                           :maybe-sent maybe-sent})
         ;; if nothing in maybe-sent returned nil, recur
         (some-> maybe-sent
                 (recur))))))
