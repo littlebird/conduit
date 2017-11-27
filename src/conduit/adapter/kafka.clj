@@ -6,7 +6,7 @@
             [conduit.protocol :as conduit]
             [conduit.tools :as tools]
             [clojure.core.async :as >]
-            [conduit.adapter.async :as async]
+            [conduit.tools.async :as async]
             [noisesmith.component :as component]
             [conduit.tools.component-util :as util])
   (:import (java.util UUID)))

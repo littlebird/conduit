@@ -1,7 +1,7 @@
-(ns conduit.adapter.async-test
+(ns conduit.tools.async-test
   (:require [clojure.test :refer [deftest testing is]]
             [clojure.core.async :as >]
-            [conduit.adapter.async :as async]))
+            [conduit.tools.async :as async]))
 
 (deftest make-routing-receiver-test
   (let [capacity-chan (>/chan)

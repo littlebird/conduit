@@ -1,64 +1,51 @@
 (ns conduit.adapter.async
   (:require [clojure.core.async :as >]
-            [taoensso.timbre :as timbre]))
+            [conduit.tools.async :as async]
+            [conduit.protocol :as conduit]
+            [taoensso.timbre :as timbre])
+  (:import (java.util UUID)))
 
-;; TODO - this seems to be doing everything properly except
-;; for the part where it sends to the channel?
-(def debug (atom []))
-
-(defn get-message-payload
-  [decode {:keys [message] :as context}]
-  (swap! debug conj {:step ::get-message-payload
-                     :context context})
-  (assoc context :payload (decode message)))
-
-(defn maybe-send-result
-  "returns work-chan if the message is not for us
-   returns false if there was a message propagated"
-  [capacity-chan {:keys [payload work-chan ignore?] :as context}]
-  (swap! debug conj {:step ::maybe-send-result
-                     :capacity-chan capacity-chan
-                     :context context})
-  (if ignore?
-    work-chan
-    (do (>/put! work-chan payload)
-        false)))
-
-(defn check-ignore
-  [my-id
-   {{:keys [to]} :payload
-    :as context}]
-  (swap! debug conj {:step ::check-ignore
-                     :context context})
-  (assoc context :ignore? (and to
-                               (not= my-id to))))
+(defrecord AsyncConduit [transmitter receiver-fn verbose unhandled id]
+  conduit/Conduit
+  (identifier [this]
+    "kafka async channel")
+  (verbose? [this]
+    (some-> verbose deref))
+  (receiver [this]
+    (let [received (receiver-fn)]
+      received))
+  (parse [this [routing contents]]
+    ;; get the routing, contents, response function from the message / instance
+    {:routing routing
+     :contents contents
+     :transmit transmitter})
+  (unhandled [this message provided]
+    (unhandled message)))
 
 (defn make-routing-receiver
-  [{:keys [capacity-chan my-id] :as opts}
-   {:keys [decode get-message-from-stream message-iterator] :as facilities}]
-  (future-call
-   (fn async-routing-receiver
-     ([]
-      (async-routing-receiver false))
-     ([send-chan]
-      ;; if target-chan is false, we get a new one, otherwise reuse it
-      (let [target-chan (or send-chan
-                            (and capacity-chan
-                                 (>/<!! capacity-chan)))
-            maybe-sent (try (some->> target-chan
-                                     (get-message-from-stream message-iterator)
-                                     (get-message-payload decode)
-                                     (check-ignore my-id)
-                                     (maybe-send-result capacity-chan))
-                            (catch Exception e
-                              (timbre/error ::async-routing-receiver (pr-str e))
-                              nil))]
-        (swap! debug conj {:step ::async-routing-receiver
-                           :maybe-sent maybe-sent})
-        ;; if nothing in maybe-sent returned nil, recur
-        (some-> maybe-sent
-                (recur))))))
-  (fn submit-to-router []
-    (let [res-chan (>/chan)]
-      (>/put! capacity-chan res-chan)
-      res-chan)))
+  "returns a function taking a channel which will receive a message
+   the client should act on; if no channel provided it will create and return
+   a fresh channel"
+  [{:keys [capacity-chan task-chan] :as opts}]
+  {:pre [capacity-chan task-chan]}
+  (let [facilities {:decode identity
+                    :get-message-from-stream (fn [tasks target]
+                                               {:message (>/<!! tasks)
+                                                :work-chan target})
+                    :message-iterator task-chan}]
+    (async/make-routing-receiver opts facilities)))
+
+(defn new-async-conduit
+  [{:keys [request-chan work-chan id verbose unhandled]}]
+  (let [my-id (or id (UUID/randomUUID))
+        receiver-args {:my-id my-id
+                       :capacity-chan request-chan
+                       :task-chan work-chan}
+        receiver-fn (make-routing-receiver receiver-args)
+        transmitter (fn [to route message]
+                      (>/put! work-chan [to route my-id message]))]
+    (map->AsyncConduit {:transmitter transmitter
+                        :receiver-fn receiver-fn
+                        :verbose verbose
+                        :unhandled unhandled
+                        :id my-id})))
