@@ -12,8 +12,8 @@
               {::message "hello"})
             (get-message-from-stream
               [message-iterator work-chan]
-              {:message (message-iterator)
-               :work-chan work-chan})]
+              (>/go {:message (message-iterator)
+                     :work-chan work-chan}))]
       (let [reciever (async/make-routing-receiver {:capacity-chan capacity-chan
                                                    :my-id my-id}
                                                   {:decode decode

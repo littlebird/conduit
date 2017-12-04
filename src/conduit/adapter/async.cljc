@@ -1,9 +1,8 @@
 (ns conduit.adapter.async
   (:require [clojure.core.async :as >]
             [conduit.tools.async :as async]
-            [conduit.protocol :as conduit]
-            [taoensso.timbre :as timbre])
-  (:import (java.util UUID)))
+            [conduit.protocol :as conduit])
+  #?@(:clj [(:import (java.util UUID))]))
 
 (defrecord AsyncConduit [transmitter receiver-fn verbose unhandled id]
   conduit/Conduit
@@ -30,14 +29,15 @@
   {:pre [capacity-chan task-chan]}
   (let [facilities {:decode identity
                     :get-message-from-stream (fn [tasks target]
-                                               {:message (>/<!! tasks)
-                                                :work-chan target})
+                                               (>/go {:message (>/<! tasks)
+                                                      :work-chan target}))
                     :message-iterator task-chan}]
     (async/make-routing-receiver opts facilities)))
 
 (defn new-async-conduit
   [{:keys [request-chan work-chan id verbose unhandled]}]
-  (let [my-id (or id (UUID/randomUUID))
+  (let [my-id (or id #?(:clj (UUID/randomUUID)
+                        :cljs (random-uuid)))
         receiver-args {:my-id my-id
                        :capacity-chan request-chan
                        :task-chan work-chan}
