@@ -50,6 +50,8 @@
    (defn make-routing-receiver
      [{:keys [capacity-chan my-id] :as opts}
       {:keys [decode get-message-from-stream message-iterator] :as facilities}]
+     (assert capacity-chan
+             "this cannot run without a capacity chan")
      (>/go
       (loop [send-chan false]
         ;; if target-chan is false, we get a new one, otherwise reuse it
