@@ -26,33 +26,36 @@
   (let [done (delay :OK)]
     (>/go
      (loop []
-       (let [messagep (volatile! ::unset)]
-         (try
-          (let [socket (conduit/receiver conduit)
-                [message from] (>/alts! [shutdown socket])]
-            (vreset! messagep message)
-            (if (or (not message)
-                    (= from shutdown))
-              (force done)
-              #?(:clj
-                 (>/<! (>/thread (dispatch message provided)))
-                 :cljs
-                 (dispatch message provided))))
-          (catch #?(:clj Exception :cljs js/Object)
-            e
-            (log-error-here
-             conduit
-             {:message @messagep}
-             e))
-          (catch #?(:clj Throwable :cljs js/Error)
-            t
-            (log-error-here
-             conduit
-             {:message @messagep}
-             t)
-            (throw t))))
+       (when-not (realized? done)
+         (let [messagep (volatile! ::unset)]
+           (try
+            (let [socket (conduit/receiver conduit)
+                  [message from] (>/alts! [shutdown socket])]
+              (vreset! messagep message)
+              (if (or (not message)
+                      (= from shutdown))
+                (force done)
+                #?(:clj
+                   (>/<! (>/thread (dispatch message provided)))
+                   :cljs
+                   (dispatch message provided))))
+            (catch #?(:clj Exception :cljs js/Object)
+              e
+              (log-error-here
+               conduit
+               {:message @messagep}
+               e))
+            (catch #?(:clj Throwable :cljs js/Error)
+              t
+              (log-error-here
+               conduit
+               {:message @messagep}
+               t)
+              (throw t)))))
        (if (realized? done)
-         (tools/debug-msg (str (conduit/identifier conduit)
+         (tools/debug-msg (str ::socket-loop
+                               " "
+                               (conduit/identifier conduit)
                                " conduit socket-loop shutting down"))
          (recur))))))
 
